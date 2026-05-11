@@ -60,6 +60,7 @@
     // bubbles, transition badges, hint balloons, "Open in Maps" link) every
     // time the panorama redraws. CSS handles the easy cases; this handles
     // dynamic additions and classes that don't fit our selector patterns.
+    const STREET_TEXT_RE = /(улиц|проспект|переул|шоссе|бульвар|площад|набереж|просп\.|ул\.|пер\.|пр-кт|пр\.|д\.\s*\d|\d+[-–]\d+)/i;
     function cleanPanoramaOverlays() {
         const pano = $('pano');
         if (!pano) return;
@@ -67,8 +68,8 @@
             const tag = el.tagName;
             if (tag === 'CANVAS' || tag === 'VIDEO' || tag === 'IMG') return;
             if (el.querySelector('canvas, video')) return;
-            const cls = String(el.className || '');
-            if (typeof cls !== 'string') return;
+            // className may be SVGAnimatedString on SVG elements; getAttribute is safer.
+            const cls = String(el.getAttribute && el.getAttribute('class') || el.className || '');
             if (/zoom/i.test(cls)) return;
             const overlayRe = /marker|hint|tooltip|popup|balloon|toponym|address|copyright|panel|link-control|open-link|go-to-map/i;
             if (overlayRe.test(cls)) {
@@ -76,11 +77,22 @@
                 return;
             }
             const text = (el.textContent || '').trim();
+            // Last-resort: hide absolutely-positioned text leaves that look like
+            // street/house labels, even if their class didn't match anything.
             if (text.length > 0 && text.length < 80 && el.children.length === 0) {
                 const computed = getComputedStyle(el);
                 if (computed.position === 'absolute' || computed.position === 'fixed') {
                     el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;';
+                    return;
                 }
+            }
+            if (text.length > 0 && text.length < 80 && STREET_TEXT_RE.test(text)) {
+                // Walk up a bit to also nuke the pill wrapper around the text.
+                let target = el;
+                for (let i = 0; i < 3 && target.parentElement && target.parentElement !== pano; i++) {
+                    target = target.parentElement;
+                }
+                target.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
             }
         });
     }
@@ -244,6 +256,13 @@
                     hotkeysEnabled: true,
                     suppressMapOpenBlock: true,
                 });
+                // Yandex injects address markers and transition arrows into the
+                // panorama. Run the overlay cleaner immediately and again after
+                // a short delay to catch late insertions before the user sees them.
+                cleanPanoramaOverlays();
+                setTimeout(cleanPanoramaOverlays, 100);
+                setTimeout(cleanPanoramaOverlays, 500);
+                setTimeout(cleanPanoramaOverlays, 1500);
             },
             (err) => {
                 console.error('panorama locate failed', err);
@@ -280,13 +299,17 @@
     function initGuessMap() {
         const b = data.map.bounds;
         if (!guessMap) {
+            // Construct WITHOUT restrictMapArea — when the option is set at
+            // construction time inside a freshly-shown absolute-positioned
+            // container, ymaps sometimes skips the initial tile fetch and
+            // leaves the map as a solid pale-blue rectangle. We set the
+            // restriction below, after the first fitToViewport call.
             guessMap = new ymaps.Map('guess-map', {
                 center: data.map.center,
                 zoom: data.map.zoom,
                 type: 'yandex#map',
                 controls: ['zoomControl'],
             }, {
-                restrictMapArea: [[b[0], b[1]], [b[2], b[3]]],
                 suppressMapOpenBlock: true,
                 maxZoom: MAX_ZOOM,
                 minZoom: 9,
@@ -309,12 +332,21 @@
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Подтвердить метку';
             });
+            // Force the tile layer to load: fit container, set bounds to the
+            // playable area, then apply restrictMapArea. setBounds triggers a
+            // tile request even when the construction-time center/zoom didn't.
+            requestAnimationFrame(() => {
+                guessMap.container.fitToViewport();
+                guessMap.setBounds([[b[0], b[1]], [b[2], b[3]]], { checkZoomRange: true, zoomMargin: 5 });
+                guessMap.options.set('restrictMapArea', [[b[0], b[1]], [b[2], b[3]]]);
+                setTimeout(() => guessMap && guessMap.container.fitToViewport(), 250);
+            });
         } else {
             guessMap.setCenter(data.map.center, data.map.zoom);
             if (guessMarker) { guessMap.geoObjects.remove(guessMarker); guessMarker = null; }
             pendingGuess = null;
+            requestAnimationFrame(() => guessMap.container.fitToViewport());
         }
-        requestAnimationFrame(() => guessMap.container.fitToViewport());
     }
 
     function renderResultMap(msg) {

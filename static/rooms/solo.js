@@ -56,6 +56,7 @@
     // Aggressive runtime cleaner for Yandex panorama overlays (address bubbles,
     // transition badges, hint balloons, "Open in Maps" link). CSS handles the
     // easy cases; this MutationObserver catches anything Yandex injects late.
+    const STREET_TEXT_RE = /(улиц|проспект|переул|шоссе|бульвар|площад|набереж|просп\.|ул\.|пер\.|пр-кт|пр\.|д\.\s*\d|\d+[-–]\d+)/i;
     function cleanPanoramaOverlays() {
         const pano = $('pano');
         if (!pano) return;
@@ -63,8 +64,7 @@
             const tag = el.tagName;
             if (tag === 'CANVAS' || tag === 'VIDEO' || tag === 'IMG') return;
             if (el.querySelector('canvas, video')) return;
-            const cls = String(el.className || '');
-            if (typeof cls !== 'string') return;
+            const cls = String(el.getAttribute && el.getAttribute('class') || el.className || '');
             if (/zoom/i.test(cls)) return;
             const overlayRe = /marker|hint|tooltip|popup|balloon|toponym|address|copyright|panel|link-control|open-link|go-to-map/i;
             if (overlayRe.test(cls)) {
@@ -76,7 +76,15 @@
                 const computed = getComputedStyle(el);
                 if (computed.position === 'absolute' || computed.position === 'fixed') {
                     el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;';
+                    return;
                 }
+            }
+            if (text.length > 0 && text.length < 80 && STREET_TEXT_RE.test(text)) {
+                let target = el;
+                for (let i = 0; i < 3 && target.parentElement && target.parentElement !== pano; i++) {
+                    target = target.parentElement;
+                }
+                target.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
             }
         });
     }
@@ -215,6 +223,13 @@
             hotkeysEnabled: true,
             suppressMapOpenBlock: true,
         });
+        // Yandex injects address markers and transition arrows into the
+        // panorama. Run the overlay cleaner immediately and again at a few
+        // delays to catch late insertions before the user sees them.
+        cleanPanoramaOverlays();
+        setTimeout(cleanPanoramaOverlays, 100);
+        setTimeout(cleanPanoramaOverlays, 500);
+        setTimeout(cleanPanoramaOverlays, 1500);
     }
 
     function drawBoundsOverlay(map) {
@@ -241,13 +256,16 @@
 
     function initGuessMap() {
         if (!guessMap) {
+            // restrictMapArea is applied AFTER the first fitToViewport — when
+            // set at construction time inside a freshly-shown container, ymaps
+            // sometimes skips the initial tile fetch and leaves the map as a
+            // solid pale-blue rectangle.
             guessMap = new ymaps.Map('guess-map', {
                 center: MAP.center,
                 zoom: MAP.zoom,
                 type: 'yandex#map',
                 controls: ['zoomControl'],
             }, {
-                restrictMapArea: [[BOUNDS[0], BOUNDS[1]], [BOUNDS[2], BOUNDS[3]]],
                 suppressMapOpenBlock: true,
                 maxZoom: MAX_ZOOM,
                 minZoom: 9,
@@ -270,11 +288,17 @@
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Подтвердить метку';
             });
+            requestAnimationFrame(() => {
+                guessMap.container.fitToViewport();
+                guessMap.setBounds([[BOUNDS[0], BOUNDS[1]], [BOUNDS[2], BOUNDS[3]]], { checkZoomRange: true, zoomMargin: 5 });
+                guessMap.options.set('restrictMapArea', [[BOUNDS[0], BOUNDS[1]], [BOUNDS[2], BOUNDS[3]]]);
+                setTimeout(() => guessMap && guessMap.container.fitToViewport(), 250);
+            });
         } else {
             if (guessMarker) { guessMap.geoObjects.remove(guessMarker); guessMarker = null; }
             guessMap.setCenter(MAP.center, MAP.zoom);
+            requestAnimationFrame(() => guessMap.container.fitToViewport());
         }
-        requestAnimationFrame(() => guessMap.container.fitToViewport());
     }
 
     function commitGuess() {

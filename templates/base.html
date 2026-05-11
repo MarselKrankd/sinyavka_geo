@@ -27,39 +27,37 @@
         body { font-family: 'Inter', system-ui, sans-serif; }
         .ring-brand { box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.6); }
 
-        /* Yandex panorama overlay killers.
-           Descendant combinator: anything matching the inner pattern inside a
-           panorama element, plus same-element matches for older selectors.
-           Address bubbles ("Пушкинская улица, 157-161"), transition badges
-           ("30 m"), hint balloons, copyright lines, "Open in Maps" link —
-           all gone. CSS is belt; the JS MutationObserver in game.js/solo.js
-           is the braces. */
-        [class*="-panorama"] [class*="marker"],
-        [class*="-panorama"] [class*="hint"],
-        [class*="-panorama"] [class*="tooltip"],
-        [class*="-panorama"] [class*="popup"],
-        [class*="-panorama"] [class*="balloon"],
-        [class*="-panorama"] [class*="toponym"],
-        [class*="-panorama"] [class*="address"],
-        [class*="-panorama"] [class*="copyright"],
-        [class*="-panorama"] [class*="panel"],
-        [class*="-panorama"] [class*="link-control"],
-        [class*="-panorama"] [class*="open-link"],
-        [class*="-panorama-go-to-map"],
-        [class*="-panorama-control__marker"],
-        [class*="-panorama"][class*="marker-content"],
-        [class*="-panorama"][class*="marker_type_"],
-        [class*="-panorama"][class*="__hint"],
-        [class*="-panorama"][class*="__copyright"],
-        [class*="-panorama"][class*="__panel"],
-        [class*="-go-to-map"] {
+        /* Yandex panorama overlay killers — scoped by our #pano element so
+           we don't depend on Yandex's panorama-vs-pano class naming.
+           Address pills ("Пушкинская улица, 157-161"), transition badges,
+           hint balloons, copyright lines, "Open in Maps" link — all gone.
+           Zoom controls are whitelisted via :not(). */
+        #pano [class*="marker"]:not([class*="zoom"]),
+        #pano [class*="hint"]:not([class*="zoom"]),
+        #pano [class*="tooltip"],
+        #pano [class*="popup"],
+        #pano [class*="balloon"],
+        #pano [class*="toponym"],
+        #pano [class*="address"],
+        #pano [class*="copyright"],
+        #pano [class*="-panel"]:not([class*="zoom"]),
+        #pano [class*="__panel"]:not([class*="zoom"]),
+        #pano [class*="link-control"],
+        #pano [class*="open-link"],
+        #pano [class*="go-to-map"],
+        #pano ymaps[class*="marker"]:not([class*="zoom"]),
+        #pano ymaps[class*="hint"]:not([class*="zoom"]) {
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
             pointer-events: none !important;
         }
-        /* Hide map POI hover hints so they don't collide with click-to-pin */
-        [class*="-hint__text"] {
+        /* Hide map POI hover hints so they don't collide with click-to-pin.
+           Scoped to #pano + #guess-map + #result-map so other Yandex maps
+           elsewhere on the page aren't affected. */
+        #pano [class*="-hint__text"],
+        #guess-map [class*="-hint__text"],
+        #result-map [class*="-hint__text"] {
             display: none !important;
         }
     </style>
