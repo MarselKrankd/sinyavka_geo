@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Комнаты — Sinyavka Geo{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="flex items-end justify-between mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">Открытые комнаты</h1>
+            <p class="text-slate-400 text-sm mt-1">Выбирай комнату или создавай свою — Синявское, Ростов или Москва.</p>
+        </div>
+        <a href="{% url 'rooms:create_room' %}" class="px-5 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold transition">+ Создать комнату</a>
+    </div>
+
+    {% if rooms %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for room in rooms %}
+        <a href="{{ room.get_absolute_url }}" class="group block bg-slate-900/70 border border-slate-800 hover:border-brand-600 rounded-xl p-5 transition">
+            <div class="flex items-start justify-between mb-3">
+                <div>
+                    <h3 class="text-lg font-semibold group-hover:text-brand-500 transition">{{ room.name }}</h3>
+                    <div class="text-xs text-slate-500 mt-0.5">код: {{ room.code }}</div>
+                </div>
+                <span class="text-xs px-2 py-1 rounded-full
+                    {% if room.status == 'lobby' %}bg-emerald-500/20 text-emerald-300
+                    {% elif room.status == 'in_game' %}bg-amber-500/20 text-amber-300
+                    {% else %}bg-slate-700 text-slate-300{% endif %}">
+                    {{ room.get_status_display }}
+                </span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center gap-2 text-slate-300">
+                    <span class="inline-block w-2 h-2 rounded-full bg-brand-500"></span>
+                    {% if room.map_key == 'sinyavskoe' %}с. Синявское
+                    {% elif room.map_key == 'rostov' %}Ростов-на-Дону
+                    {% elif room.map_key == 'moscow' %}Москва{% endif %}
+                </div>
+                <div class="text-slate-400">
+                    <span class="text-white font-semibold">{{ room.player_count }}</span>/{{ room.max_players }} · {{ room.rounds_total }} раундов
+                </div>
+            </div>
+            <div class="text-xs text-slate-500 mt-3">Хост: {{ room.host.username }}</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-20 border border-dashed border-slate-800 rounded-2xl">
+        <div class="text-5xl mb-4">🗺️</div>
+        <h3 class="text-xl font-semibold mb-1">Пока пусто</h3>
+        <p class="text-slate-400 text-sm">Будь первым — создай комнату и зови пацанов.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

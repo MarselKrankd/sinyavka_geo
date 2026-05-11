@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% load socialaccount %}
+{% block title %}Вход — Sinyavka Geo{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-16">
+    <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+        <h1 class="text-2xl font-bold mb-1">Добро пожаловать</h1>
+        <p class="text-slate-400 text-sm mb-6">Войди через соцсеть и угадывай локации с пацанами.</p>
+
+        <div class="space-y-2">
+            <a href="{% provider_login_url 'google' %}" class="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg bg-white text-slate-900 font-semibold hover:bg-slate-200 transition">
+                <svg class="w-5 h-5" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3a12 12 0 1 1-3.3-13.1l5.7-5.7A20 20 0 1 0 44 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8A12 12 0 0 1 24 12c3 0 5.7 1.1 7.8 3l5.7-5.7A20 20 0 0 0 6.3 14.7z"/><path fill="#4CAF50" d="M24 44a20 20 0 0 0 13.4-5.2l-6.2-5.2A12 12 0 0 1 12.7 28l-6.5 5A20 20 0 0 0 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3a12 12 0 0 1-4.1 5.6l6.2 5.2C41 36.3 44 30.7 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                Войти через Google
+            </a>
+            <a href="{% provider_login_url 'yandex' %}" class="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold transition">
+                <span class="w-5 h-5 grid place-items-center font-bold">Я</span>
+                Войти через Яндекс
+            </a>
+            <a href="{% provider_login_url 'vk' %}" class="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition">
+                <span class="w-5 h-5 grid place-items-center font-bold">VK</span>
+                Войти через ВКонтакте
+            </a>
+        </div>
+
+        <div class="flex items-center gap-3 my-6 text-xs text-slate-500">
+            <div class="flex-1 h-px bg-slate-800"></div>
+            или через логин и пароль
+            <div class="flex-1 h-px bg-slate-800"></div>
+        </div>
+
+        <form method="post" action="{% url 'account_login' %}" class="space-y-3">
+            {% csrf_token %}
+            {% for field in form %}
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="text-rose-400 text-xs mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+                </div>
+            {% endfor %}
+            {% if form.non_field_errors %}<div class="text-rose-400 text-xs">{{ form.non_field_errors|join:", " }}</div>{% endif %}
+            <button class="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">Войти</button>
+        </form>
+
+        <p class="text-center text-xs text-slate-500 mt-6">
+            Нет аккаунта? <a href="{% url 'account_signup' %}" class="text-brand-500 hover:text-brand-400">Зарегистрируйся</a>
+        </p>
+    </div>
+</div>
+
+<style>
+    input[type="text"], input[type="email"], input[type="password"] {
+        width: 100%;
+        background-color: rgb(15 23 42);
+        border: 1px solid rgb(51 65 85);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        color: white;
+        font-size: 0.875rem;
+    }
+    input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus {
+        outline: none;
+        border-color: rgb(34 211 238);
+        box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.3);
+    }
+</style>
+{% endblock %}

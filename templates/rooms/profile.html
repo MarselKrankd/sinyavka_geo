@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Профиль — Sinyavka Geo{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-10">
+    <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+        <div class="flex items-center gap-6">
+            {% if profile.avatar_url %}
+                <img src="{{ profile.avatar_url }}" alt="" class="w-24 h-24 rounded-2xl object-cover ring-4 ring-brand-600/40">
+            {% else %}
+                <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-brand-500 to-fuchsia-500 grid place-items-center text-4xl font-bold text-slate-950">
+                    {{ profile.nickname|slice:":1"|upper }}
+                </div>
+            {% endif %}
+            <div class="flex-1">
+                <h1 class="text-3xl font-bold">{{ profile.nickname }}</h1>
+                <div class="text-slate-400 text-sm mt-1">@{{ user.username }}</div>
+                <div class="flex items-center gap-4 mt-3 text-sm">
+                    <span class="px-3 py-1 rounded-full bg-brand-500/20 text-brand-300 font-semibold">LVL {{ profile.level }}</span>
+                    <span class="text-slate-400">{{ profile.wins }} побед · {{ profile.games_played }} игр</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-6">
+            <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <span>Опыт</span>
+                <span>{{ profile.xp }} / 1000</span>
+            </div>
+            <div class="h-3 rounded-full bg-slate-800 overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-brand-500 to-fuchsia-500" style="width: {% widthratio profile.xp 1000 100 %}%"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

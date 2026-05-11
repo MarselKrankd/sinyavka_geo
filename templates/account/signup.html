@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Регистрация — Sinyavka Geo{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-16">
+    <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+        <h1 class="text-2xl font-bold mb-1">Регистрация</h1>
+        <p class="text-slate-400 text-sm mb-6">Создай аккаунт или вернись на <a href="{% url 'account_login' %}" class="text-brand-500 hover:text-brand-400">вход через соцсети</a>.</p>
+
+        <form method="post" action="{% url 'account_signup' %}" class="space-y-3">
+            {% csrf_token %}
+            {% for field in form %}
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="text-rose-400 text-xs mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+                </div>
+            {% endfor %}
+            {% if form.non_field_errors %}<div class="text-rose-400 text-xs">{{ form.non_field_errors|join:", " }}</div>{% endif %}
+            <button class="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">Создать аккаунт</button>
+        </form>
+    </div>
+</div>
+
+<style>
+    input[type="text"], input[type="email"], input[type="password"] {
+        width: 100%;
+        background-color: rgb(15 23 42);
+        border: 1px solid rgb(51 65 85);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        color: white;
+        font-size: 0.875rem;
+    }
+    input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus {
+        outline: none;
+        border-color: rgb(34 211 238);
+        box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.3);
+    }
+</style>
+{% endblock %}

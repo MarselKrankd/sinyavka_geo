@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Создать комнату — Sinyavka Geo{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-10">
+    <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+        <h1 class="text-2xl font-bold mb-1">Новая комната</h1>
+        <p class="text-slate-400 text-sm mb-6">Настрой партию и зови игроков по ссылке.</p>
+
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+
+            <div>
+                <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Название</label>
+                {{ form.name }}
+                {% if form.name.errors %}<div class="text-rose-400 text-xs mt-1">{{ form.name.errors|join:", " }}</div>{% endif %}
+            </div>
+
+            <div>
+                <label class="block text-xs uppercase tracking-wide text-slate-400 mb-2">Карта</label>
+                <div class="grid grid-cols-3 gap-3">
+                    {% for value, label in form.map_key.field.choices %}
+                    <label class="cursor-pointer">
+                        <input type="radio" name="map_key" value="{{ value }}" class="peer sr-only" {% if forloop.first %}checked{% endif %}>
+                        <div class="border border-slate-700 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 rounded-xl p-4 text-center transition">
+                            <div class="text-3xl mb-2">
+                                {% if value == 'sinyavskoe' %}🌾{% elif value == 'rostov' %}🏙️{% else %}🏛️{% endif %}
+                            </div>
+                            <div class="font-semibold text-sm">{{ label }}</div>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% if form.map_key.errors %}<div class="text-rose-400 text-xs mt-1">{{ form.map_key.errors|join:", " }}</div>{% endif %}
+            </div>
+
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Игроков</label>
+                    {{ form.max_players }}
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Раундов</label>
+                    {{ form.rounds_total }}
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-slate-400 mb-1">Сек./раунд</label>
+                    {{ form.round_duration_sec }}
+                </div>
+            </div>
+
+            <label class="flex items-center gap-3 cursor-pointer">
+                {{ form.is_private }}
+                <span class="text-sm">Приватная комната (только по ссылке)</span>
+            </label>
+
+            <div class="flex items-center justify-end gap-3 pt-2">
+                <a href="{% url 'rooms:home' %}" class="px-4 py-2 text-sm text-slate-400 hover:text-white">Отмена</a>
+                <button class="px-5 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">Создать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    input[type="text"], input[type="number"] {
+        width: 100%;
+        background-color: rgb(15 23 42);
+        border: 1px solid rgb(51 65 85);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        color: white;
+        font-size: 0.875rem;
+    }
+    input[type="text"]:focus, input[type="number"]:focus {
+        outline: none;
+        border-color: rgb(34 211 238);
+    }
+    input[type="checkbox"] {
+        width: 1.1rem;
+        height: 1.1rem;
+        accent-color: rgb(6 182 212);
+    }
+</style>
+{% endblock %}

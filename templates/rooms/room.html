@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ room.name }} — Sinyavka Geo{% endblock %}
+
+{% block extra_head %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&libraries=streetView&language=ru&v=weekly" async defer></script>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+    <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold">{{ room.name }}</h1>
+            <div class="text-sm text-slate-400 mt-1">
+                Карта: <span class="text-brand-400">{{ map_def.label }}</span> ·
+                Раундов: {{ room.rounds_total }} ·
+                <span id="room-status">Лобби</span>
+                <span class="ml-2 text-xs text-slate-500">код: {{ room.code }}</span>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="copy-link" class="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700">📋 Скопировать ссылку</button>
+            {% if membership %}
+            <form method="post" action="{% url 'rooms:leave_room' room.code %}" class="m-0">
+                {% csrf_token %}
+                <button class="text-xs px-3 py-1.5 rounded-md bg-rose-600/20 hover:bg-rose-600/30 text-rose-300">Выйти</button>
+            </form>
+            {% else %}
+            <form method="post" action="{% url 'rooms:join_room' room.code %}" class="m-0">
+                {% csrf_token %}
+                <button class="text-xs px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">Зайти</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+        <!-- Game area -->
+        <div class="space-y-3">
+            <!-- Lobby state -->
+            <div id="lobby-panel" class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 text-center">
+                <div class="text-5xl mb-3">⏳</div>
+                <h2 class="text-xl font-semibold mb-1">Ожидание игроков</h2>
+                <p class="text-slate-400 text-sm mb-5">Когда все соберутся, хост запустит игру.</p>
+                {% if membership and room.host_id == user.id %}
+                <button id="start-btn" class="px-6 py-3 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">▶ Начать игру</button>
+                {% else %}
+                <div class="text-xs text-slate-500">Запустит хост: {{ room.host.username }}</div>
+                {% endif %}
+            </div>
+
+            <!-- Game state (hidden initially) -->
+            <div id="game-panel" class="hidden">
+                <div class="flex items-center justify-between text-sm mb-2">
+                    <div>Раунд <span id="round-num" class="font-bold text-brand-400">1</span> / <span id="round-total">{{ room.rounds_total }}</span></div>
+                    <div class="font-bold text-lg" id="timer">--:--</div>
+                </div>
+                <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900" style="height: 480px;">
+                    <div id="pano" class="absolute inset-0"></div>
+                    <!-- Mini guess map overlay (expandable) -->
+                    <div id="guess-map-wrapper" class="absolute bottom-3 right-3 w-72 h-56 hover:w-96 hover:h-72 transition-all duration-200 rounded-xl overflow-hidden border-2 border-slate-700 hover:border-brand-500 shadow-2xl bg-slate-900">
+                        <div id="guess-map" class="w-full h-full"></div>
+                        <button id="submit-guess" disabled class="absolute bottom-2 left-2 right-2 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-950 font-semibold text-sm transition">Поставь метку</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Round result (hidden initially) -->
+            <div id="result-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-6">
+                <h3 class="text-lg font-semibold mb-3">Результат раунда</h3>
+                <div class="rounded-xl overflow-hidden border border-slate-800 mb-4" style="height: 320px;">
+                    <div id="result-map" class="w-full h-full"></div>
+                </div>
+                <div id="result-list" class="space-y-1.5 text-sm"></div>
+            </div>
+
+            <!-- Game over (hidden initially) -->
+            <div id="over-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-8">
+                <div class="text-center mb-6">
+                    <div class="text-5xl mb-2">🏆</div>
+                    <h2 class="text-2xl font-bold">Игра окончена</h2>
+                </div>
+                <div id="final-list" class="space-y-2"></div>
+                <div class="text-center mt-6">
+                    <a href="{% url 'rooms:home' %}" class="inline-block px-5 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">Обратно в комнаты</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar: players + chat -->
+        <aside class="space-y-3">
+            <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+                <h3 class="text-sm font-semibold text-slate-300 mb-3 flex items-center justify-between">
+                    Игроки <span id="player-count" class="text-xs text-slate-500">0/{{ room.max_players }}</span>
+                </h3>
+                <ul id="players" class="space-y-2"></ul>
+            </div>
+
+            <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+                <h3 class="text-sm font-semibold text-slate-300 mb-2">Чат</h3>
+                <div id="chat-log" class="h-48 overflow-y-auto space-y-1 text-sm pr-1"></div>
+                <form id="chat-form" class="mt-2 flex gap-2">
+                    <input id="chat-input" type="text" maxlength="200" placeholder="Сообщение..." class="flex-1 bg-slate-950 border border-slate-700 focus:border-brand-500 outline-none rounded-md px-3 py-1.5 text-sm">
+                    <button class="px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-500 text-slate-950 text-sm font-semibold">→</button>
+                </form>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<script id="room-data" type="application/json">
+{
+    "code": "{{ room.code|escapejs }}",
+    "isMember": {{ membership|yesno:"true,false" }},
+    "isHost": {% if membership and room.host_id == user.id %}true{% else %}false{% endif %},
+    "map": {
+        "key": "{{ map_def.key }}",
+        "label": "{{ map_def.label|escapejs }}",
+        "center": [{{ map_def.center.0 }}, {{ map_def.center.1 }}],
+        "zoom": {{ map_def.zoom }},
+        "bounds": [{{ map_def.bounds.0 }}, {{ map_def.bounds.1 }}, {{ map_def.bounds.2 }}, {{ map_def.bounds.3 }}]
+    },
+    "me": "{{ user.username|escapejs }}"
+}
+</script>
+
+<script src="{% load static %}{% static 'rooms/game.js' %}?v=4"></script>
+{% endblock %}
