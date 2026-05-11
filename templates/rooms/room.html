@@ -111,10 +111,12 @@
     </div>
 </div>
 
-{# localize off: under LANGUAGE_CODE=ru-ru Django renders 47.2357 as
-   "47,2357", which broke the inline JSON below — center: [47,2357, 39,718]
-   parsed as four ints, ymaps got an invalid longitude and the map fell
-   back to ocean tiles (the solid blue rectangle the user kept seeing). #}
+{% comment %}
+localize off: under LANGUAGE_CODE=ru-ru Django renders 47.2357 as
+"47,2357", which broke the inline JSON below — center: [47,2357, 39,718]
+parsed as four ints, ymaps got an invalid longitude and the map fell
+back to ocean tiles (the solid blue rectangle the user kept seeing).
+{% endcomment %}
 {% localize off %}
 <script id="room-data" type="application/json">
 {
@@ -134,5 +136,5 @@
 </script>
 {% endlocalize %}
 
-<script src="{% load static %}{% static 'rooms/game.js' %}?v=16"></script>
+<script src="{% load static %}{% static 'rooms/game.js' %}?v=17"></script>
 {% endblock %}
