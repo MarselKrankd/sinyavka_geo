@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load l10n %}
 {% block title %}{{ room.name }} — Sinyavka Geo{% endblock %}
 
 {% block extra_head %}
@@ -107,6 +108,11 @@
     </div>
 </div>
 
+{# localize off: under LANGUAGE_CODE=ru-ru Django renders 47.2357 as
+   "47,2357", which broke the inline JSON below — center: [47,2357, 39,718]
+   parsed as four ints, ymaps got an invalid longitude and the map fell
+   back to ocean tiles (the solid blue rectangle the user kept seeing). #}
+{% localize off %}
 <script id="room-data" type="application/json">
 {
     "code": "{{ room.code|escapejs }}",
@@ -123,6 +129,7 @@
     "me": "{{ user.username|escapejs }}"
 }
 </script>
+{% endlocalize %}
 
-<script src="{% load static %}{% static 'rooms/game.js' %}?v=11"></script>
+<script src="{% load static %}{% static 'rooms/game.js' %}?v=12"></script>
 {% endblock %}
