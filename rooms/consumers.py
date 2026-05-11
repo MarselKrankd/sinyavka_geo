@@ -227,12 +227,22 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         })
         # Refresh sidebar scores for everyone in the room.
         await self._broadcast_state()
+        # CRITICAL: schedule the reveal sleep + next-round kick as a separate
+        # task. If we awaited the sleep inline, this consumer's dispatch loop
+        # would be parked for the full 6s, and the group_send'd round_result
+        # would sit in the channel layer queue until the loop wakes up.
+        # Client would then see round_result and round_started back-to-back
+        # (28ms apart) with no visible reveal window — exactly the bug the
+        # user reported as "result panel never shows".
+        asyncio.create_task(self._proceed_after_reveal(rnd.number, rnd.pk))
+
+    async def _proceed_after_reveal(self, round_number: int, round_pk: int):
         await asyncio.sleep(ROUND_REVEAL_SEC)
         room = await self._reload_room()
-        if rnd.number >= room.rounds_total:
+        if round_number >= room.rounds_total:
             await self._end_game(room)
         else:
-            await self._start_round(rnd.number + 1)
+            await self._start_round(round_number + 1)
 
     async def _end_game(self, room: Room):
         leaderboard, xp_gains = await database_sync_to_async(self._end_game_sync)(room.pk)
