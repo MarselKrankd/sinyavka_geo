@@ -1,0 +1,24 @@
+"""Distance and points helpers."""
+
+from __future__ import annotations
+
+import math
+
+EARTH_RADIUS_M = 6_371_000
+
+
+def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
+def points_from_distance(distance_m: float, max_distance_m: float) -> int:
+    """0..5000, exponential falloff like GeoGuessr."""
+    if max_distance_m <= 0:
+        return 0
+    ratio = distance_m / max_distance_m
+    raw = 5000 * math.exp(-10 * ratio)
+    return max(0, min(5000, int(round(raw))))
