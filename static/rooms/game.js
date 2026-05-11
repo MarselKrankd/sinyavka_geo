@@ -1,4 +1,4 @@
-/* sinyavka_geo — room realtime client */
+/* sinyavka_geo — multiplayer room client (Yandex Maps + Panoramas) */
 (() => {
     const data = JSON.parse(document.getElementById('room-data').textContent);
     const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -20,13 +20,32 @@
     const roundNum = $('round-num');
     const playerCount = $('player-count');
 
-    let panorama = null;
+    let panoPlayer = null;
     let guessMap = null;
     let guessMarker = null;
     let pendingGuess = null;
     let roundEnded = false;
     let timerInterval = null;
     let resultMap = null;
+    let resultObjects = [];
+    let ymapsReady = false;
+    const ymapsReadyCbs = [];
+
+    // ymaps loads via script tag in template; wait for it
+    function whenYmapsReady(cb) {
+        if (ymapsReady) return cb();
+        ymapsReadyCbs.push(cb);
+    }
+    if (window.ymaps) {
+        ymaps.ready(() => { ymapsReady = true; ymapsReadyCbs.splice(0).forEach(c => c()); });
+    } else {
+        const wait = setInterval(() => {
+            if (window.ymaps) {
+                clearInterval(wait);
+                ymaps.ready(() => { ymapsReady = true; ymapsReadyCbs.splice(0).forEach(c => c()); });
+            }
+        }, 100);
+    }
 
     // ---- copy link ----
     $('copy-link')?.addEventListener('click', () => {
@@ -80,7 +99,6 @@
 
     function onState(msg) {
         const players = msg.players || [];
-        playerCount.textContent = `${players.length}/${document.querySelectorAll && players.length}`;
         playerCount.textContent = `${players.length} в комнате`;
         playersList.innerHTML = players.map(p => `
             <li class="flex items-center gap-2 text-sm">
@@ -100,9 +118,7 @@
         const statusMap = { lobby: 'Лобби', in_game: 'Игра идёт', finished: 'Завершена' };
         roomStatus.textContent = statusMap[msg.room.status] || msg.room.status;
 
-        if (msg.room.status === 'finished') {
-            // keep game-over panel as-is
-        } else if (msg.room.status === 'lobby') {
+        if (msg.room.status === 'lobby') {
             show(lobbyPanel); hide(gamePanel); hide(resultPanel); hide(overPanel);
         }
     }
@@ -112,8 +128,10 @@
         pendingGuess = null;
         hide(lobbyPanel); hide(resultPanel); hide(overPanel); show(gamePanel);
         roundNum.textContent = msg.number;
-        initPanorama(msg.lat, msg.lng);
-        initGuessMap();
+        whenYmapsReady(() => {
+            initPanorama(msg.lat, msg.lng);
+            initGuessMap();
+        });
         startTimer(msg.duration);
         submitBtn.disabled = true;
         submitBtn.textContent = 'Поставь метку';
@@ -123,45 +141,7 @@
         roundEnded = true;
         stopTimer();
         show(resultPanel);
-        // build result map
-        setTimeout(() => {
-            if (!resultMap) {
-                resultMap = new google.maps.Map($('result-map'), {
-                    center: { lat: msg.actual.lat, lng: msg.actual.lng },
-                    zoom: 10,
-                    streetViewControl: false,
-                    mapTypeControl: false,
-                    fullscreenControl: false,
-                    styles: darkMapStyle,
-                });
-            } else {
-                resultMap.setCenter({ lat: msg.actual.lat, lng: msg.actual.lng });
-            }
-            // clear old overlays
-            resultMap.__overlays?.forEach(o => o.setMap(null));
-            resultMap.__overlays = [];
-            const actual = new google.maps.Marker({
-                position: { lat: msg.actual.lat, lng: msg.actual.lng },
-                map: resultMap, label: '★',
-                title: 'Настоящая локация',
-            });
-            resultMap.__overlays.push(actual);
-            msg.guesses.forEach(g => {
-                if (!g.lat && !g.lng) return;
-                const m = new google.maps.Marker({
-                    position: { lat: g.lat, lng: g.lng }, map: resultMap,
-                    label: { text: g.user.slice(0,1).toUpperCase(), color: 'white' },
-                    title: `${g.user}: ${(g.distance_m/1000).toFixed(2)} км / ${g.points} очков`,
-                });
-                resultMap.__overlays.push(m);
-                const line = new google.maps.Polyline({
-                    path: [{ lat: g.lat, lng: g.lng }, { lat: msg.actual.lat, lng: msg.actual.lng }],
-                    geodesic: true, strokeColor: '#22d3ee', strokeOpacity: 0.7, strokeWeight: 2,
-                    map: resultMap,
-                });
-                resultMap.__overlays.push(line);
-            });
-        }, 50);
+        whenYmapsReady(() => renderResultMap(msg));
         $('result-list').innerHTML = msg.guesses.map((g, i) => `
             <div class="flex items-center justify-between px-3 py-2 rounded-md ${i === 0 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-800/40'}">
                 <span class="font-semibold">${i+1}. ${escapeHtml(g.user)}</span>
@@ -190,67 +170,114 @@
         }).join('');
     }
 
-    // ---- Street View ----
+    // ---- Yandex Panorama ----
     function initPanorama(lat, lng) {
-        const pos = { lat, lng };
-        if (!panorama) {
-            panorama = new google.maps.StreetViewPanorama($('pano'), {
-                position: pos,
-                pov: { heading: Math.random() * 360, pitch: 0 },
-                addressControl: false,
-                showRoadLabels: false,
-                linksControl: true,
-                panControl: true,
-                zoomControl: true,
-                fullscreenControl: false,
-                motionTracking: false,
-                motionTrackingControl: false,
-            });
-        } else {
-            panorama.setPosition(pos);
-            panorama.setPov({ heading: Math.random() * 360, pitch: 0 });
-        }
+        const target = $('pano');
+        target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-slate-500 text-sm">Загружаю панораму…</div>';
+        ymaps.panorama.locate([lat, lng], { layer: 'yandex#panorama' }).then(
+            (panoramas) => {
+                if (!panoramas.length) {
+                    target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm text-center p-4">Здесь нет панорамы. Жди следующего раунда или продолжай гадать по карте.</div>';
+                    return;
+                }
+                if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
+                target.innerHTML = '';
+                panoPlayer = new ymaps.panorama.Player('pano', panoramas[0], {
+                    direction: [Math.random() * 360, 0],
+                    controls: ['zoomControl'],
+                    hotkeysEnabled: true,
+                });
+            },
+            (err) => {
+                console.error('panorama locate failed', err);
+                target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm">Не удалось загрузить панораму.</div>';
+            }
+        );
     }
 
     // ---- guess map ----
     function initGuessMap() {
-        const bounds = data.map.bounds;
-        const restrictBounds = new google.maps.LatLngBounds(
-            { lat: bounds[0], lng: bounds[1] },
-            { lat: bounds[2], lng: bounds[3] },
-        );
+        const bounds = data.map.bounds; // [south, west, north, east]
         if (!guessMap) {
-            guessMap = new google.maps.Map($('guess-map'), {
-                center: { lat: data.map.center[0], lng: data.map.center[1] },
+            guessMap = new ymaps.Map('guess-map', {
+                center: data.map.center,
                 zoom: data.map.zoom,
-                streetViewControl: false,
-                mapTypeControl: false,
-                fullscreenControl: false,
-                rotateControl: false,
-                disableDefaultUI: true,
-                clickableIcons: false,
-                restriction: { latLngBounds: restrictBounds, strictBounds: false },
-                styles: darkMapStyle,
+                controls: ['zoomControl'],
+            }, {
+                restrictMapArea: [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+                suppressMapOpenBlock: true,
             });
-            guessMap.addListener('click', (e) => {
+            guessMap.behaviors.disable('rightMouseButtonMagnifier');
+            guessMap.events.add('click', (e) => {
                 if (roundEnded) return;
-                if (guessMarker) guessMarker.setMap(null);
-                guessMarker = new google.maps.Marker({
-                    position: e.latLng, map: guessMap, draggable: true,
+                const coords = e.get('coords');
+                if (guessMarker) guessMap.geoObjects.remove(guessMarker);
+                guessMarker = new ymaps.Placemark(coords, {}, {
+                    draggable: true,
+                    preset: 'islands#nightCircleDotIcon',
                 });
-                pendingGuess = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-                guessMarker.addListener('dragend', (ev) => {
-                    pendingGuess = { lat: ev.latLng.lat(), lng: ev.latLng.lng() };
+                guessMarker.events.add('dragend', () => {
+                    const c = guessMarker.geometry.getCoordinates();
+                    pendingGuess = { lat: c[0], lng: c[1] };
                 });
+                guessMap.geoObjects.add(guessMarker);
+                pendingGuess = { lat: coords[0], lng: coords[1] };
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Подтвердить метку';
             });
         } else {
-            guessMap.setCenter({ lat: data.map.center[0], lng: data.map.center[1] });
-            guessMap.setZoom(data.map.zoom);
-            if (guessMarker) { guessMarker.setMap(null); guessMarker = null; }
+            guessMap.setCenter(data.map.center, data.map.zoom);
+            if (guessMarker) { guessMap.geoObjects.remove(guessMarker); guessMarker = null; }
             pendingGuess = null;
         }
+    }
+
+    function renderResultMap(msg) {
+        if (!resultMap) {
+            resultMap = new ymaps.Map('result-map', {
+                center: [msg.actual.lat, msg.actual.lng],
+                zoom: 10,
+                controls: ['zoomControl'],
+            }, { suppressMapOpenBlock: true });
+        }
+        resultObjects.forEach(o => resultMap.geoObjects.remove(o));
+        resultObjects = [];
+
+        const actual = new ymaps.Placemark(
+            [msg.actual.lat, msg.actual.lng],
+            { hintContent: 'Настоящая локация' },
+            { preset: 'islands#redStarIcon' },
+        );
+        resultMap.geoObjects.add(actual);
+        resultObjects.push(actual);
+
+        const allCoords = [[msg.actual.lat, msg.actual.lng]];
+        msg.guesses.forEach(g => {
+            if (!g.lat && !g.lng) return;
+            const guess = new ymaps.Placemark(
+                [g.lat, g.lng],
+                { hintContent: `${g.user}: ${(g.distance_m/1000).toFixed(2)} км · ${g.points} очков` },
+                { preset: 'islands#blueCircleDotIconWithCaption', iconCaption: g.user.slice(0, 6) },
+            );
+            const line = new ymaps.Polyline(
+                [[g.lat, g.lng], [msg.actual.lat, msg.actual.lng]],
+                {},
+                { strokeColor: '#22d3ee', strokeWidth: 2, strokeStyle: 'shortdash' },
+            );
+            resultMap.geoObjects.add(guess);
+            resultMap.geoObjects.add(line);
+            resultObjects.push(guess, line);
+            allCoords.push([g.lat, g.lng]);
+        });
+        if (allCoords.length > 1) {
+            resultMap.setBounds(coordsBounds(allCoords), { checkZoomRange: true, zoomMargin: 40 });
+        }
+    }
+
+    function coordsBounds(coords) {
+        const lats = coords.map(c => c[0]);
+        const lngs = coords.map(c => c[1]);
+        return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
     }
 
     submitBtn.addEventListener('click', () => {
@@ -279,19 +306,9 @@
         return `${m}:${r}`;
     }
 
-    // ---- utils ----
     function show(el) { el.classList.remove('hidden'); }
     function hide(el) { el.classList.add('hidden'); }
     function escapeHtml(s) {
         return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
-
-    const darkMapStyle = [
-        {elementType:'geometry',stylers:[{color:'#1f2937'}]},
-        {elementType:'labels.text.fill',stylers:[{color:'#94a3b8'}]},
-        {elementType:'labels.text.stroke',stylers:[{color:'#0f172a'}]},
-        {featureType:'water',stylers:[{color:'#0e7490'}]},
-        {featureType:'road',stylers:[{color:'#334155'}]},
-        {featureType:'poi',stylers:[{visibility:'off'}]},
-    ];
 })();

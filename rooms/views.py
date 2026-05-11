@@ -11,6 +11,7 @@ from django.views.decorators.http import require_POST
 from .forms import RoomCreateForm
 from .locations import MAPS
 from .models import Membership, Room
+from django.http import Http404
 
 
 @login_required
@@ -89,6 +90,26 @@ def leave_room(request, code):
     if room.host_id == request.user.id and not room.memberships.exists():
         room.delete()
     return redirect('rooms:home')
+
+
+@login_required
+def solo(request, map_key):
+    map_def = MAPS.get(map_key)
+    if not map_def:
+        raise Http404('Карта не найдена')
+    payload = {
+        'key': map_def.key,
+        'label': map_def.label,
+        'center': list(map_def.center),
+        'zoom': map_def.zoom,
+        'bounds': list(map_def.bounds),
+        'points': [list(p) for p in map_def.points],
+        'max_distance_m': map_def.max_distance_m,
+    }
+    return render(request, 'rooms/solo.html', {
+        'map_def': map_def,
+        'map_payload': payload,
+    })
 
 
 @login_required

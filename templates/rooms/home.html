@@ -3,10 +3,40 @@
 
 {% block content %}
 <div class="max-w-7xl mx-auto px-4 py-8">
+    <!-- Solo mode -->
+    <section class="mb-10">
+        <div class="flex items-end justify-between mb-3">
+            <div>
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <span class="text-xs uppercase tracking-wide px-2 py-1 rounded bg-amber-500/20 text-amber-300">соло</span>
+                    Игра на скорость
+                </h2>
+                <p class="text-slate-400 text-sm mt-1">5 раундов по 60 сек, без других игроков. Опыт не начисляется.</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <a href="{% url 'rooms:solo' 'sinyavskoe' %}" class="group bg-slate-900/70 border border-slate-800 hover:border-amber-500 rounded-xl p-5 transition">
+                <div class="text-3xl mb-2">🌾</div>
+                <div class="font-semibold group-hover:text-amber-300">с. Синявское</div>
+                <div class="text-xs text-slate-500 mt-1">Деревня, тихие улицы</div>
+            </a>
+            <a href="{% url 'rooms:solo' 'rostov' %}" class="group bg-slate-900/70 border border-slate-800 hover:border-amber-500 rounded-xl p-5 transition">
+                <div class="text-3xl mb-2">🏙️</div>
+                <div class="font-semibold group-hover:text-amber-300">Ростов-на-Дону</div>
+                <div class="text-xs text-slate-500 mt-1">Город, центр и районы</div>
+            </a>
+            <a href="{% url 'rooms:solo' 'moscow' %}" class="group bg-slate-900/70 border border-slate-800 hover:border-amber-500 rounded-xl p-5 transition">
+                <div class="text-3xl mb-2">🏛️</div>
+                <div class="font-semibold group-hover:text-amber-300">Москва</div>
+                <div class="text-xs text-slate-500 mt-1">Столица во всю карту</div>
+            </a>
+        </div>
+    </section>
+
     <div class="flex items-end justify-between mb-6">
         <div>
             <h1 class="text-3xl font-bold">Открытые комнаты</h1>
-            <p class="text-slate-400 text-sm mt-1">Выбирай комнату или создавай свою — Синявское, Ростов или Москва.</p>
+            <p class="text-slate-400 text-sm mt-1">Играй с пацанами на тех же картах — реалтайм, чат, лидерборд, опыт.</p>
         </div>
         <a href="{% url 'rooms:create_room' %}" class="px-5 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold transition">+ Создать комнату</a>
     </div>

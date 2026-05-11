@@ -2,7 +2,7 @@
 {% block title %}{{ room.name }} — Sinyavka Geo{% endblock %}
 
 {% block extra_head %}
-<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&libraries=streetView&language=ru&v=weekly" async defer></script>
+<script src="https://api-maps.yandex.ru/2.1/?apikey={{ YANDEX_MAPS_API_KEY }}&lang=ru_RU&coordorder=latlong&load=package.full" type="text/javascript"></script>
 {% endblock %}
 
 {% block content %}

@@ -30,7 +30,6 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f'Site -> {site.domain}'))
 
         providers = {
-            'google': (os.getenv('GOOGLE_CLIENT_ID', ''), os.getenv('GOOGLE_CLIENT_SECRET', '')),
             'yandex': (os.getenv('YANDEX_CLIENT_ID', ''), os.getenv('YANDEX_CLIENT_SECRET', '')),
             'vk': (os.getenv('VK_CLIENT_ID', ''), os.getenv('VK_CLIENT_SECRET', '')),
         }

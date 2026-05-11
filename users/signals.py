@@ -34,8 +34,6 @@ def create_profile(sender, instance, created, **kwargs):
 def _avatar_from_social(sociallogin) -> str:
     data = sociallogin.account.extra_data or {}
     provider = sociallogin.account.provider
-    if provider == 'google':
-        return data.get('picture', '') or ''
     if provider == 'yandex':
         avatar_id = data.get('default_avatar_id')
         if avatar_id:

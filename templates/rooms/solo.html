@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Соло — {{ map_def.label }} — Sinyavka Geo{% endblock %}
+
+{% block extra_head %}
+<script src="https://api-maps.yandex.ru/2.1/?apikey={{ YANDEX_MAPS_API_KEY }}&lang=ru_RU&coordorder=latlong&load=package.full" type="text/javascript"></script>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+    <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold flex items-center gap-2">
+                <span class="text-xs uppercase tracking-wide px-2 py-1 rounded bg-amber-500/20 text-amber-300">соло · на скорость</span>
+                {{ map_def.label }}
+            </h1>
+            <div class="text-sm text-slate-400 mt-1">5 раундов · 60 сек на каждый · опыт не начисляется</div>
+        </div>
+        <a href="{% url 'rooms:home' %}" class="text-xs text-slate-400 hover:text-white">← К комнатам</a>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+        <div class="space-y-3">
+            <!-- Intro -->
+            <div id="intro-panel" class="bg-slate-900/70 border border-slate-800 rounded-2xl p-10 text-center">
+                <div class="text-6xl mb-3">⏱️</div>
+                <h2 class="text-2xl font-semibold mb-1">Готов? Угадай локацию на скорость</h2>
+                <p class="text-slate-400 text-sm mb-6">Бросаем тебя в случайную точку, у тебя 60 сек поставить метку.<br>Чем ближе и быстрее — тем больше очков.</p>
+                <button id="start-btn" class="px-8 py-3 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-bold text-lg">▶ СТАРТ</button>
+            </div>
+
+            <!-- Game -->
+            <div id="game-panel" class="hidden">
+                <div class="flex items-center justify-between text-sm mb-2">
+                    <div>Раунд <span id="round-num" class="font-bold text-brand-400">1</span> / 5</div>
+                    <div class="flex items-center gap-3">
+                        <div class="text-slate-400">Очки: <span id="score-total" class="text-brand-400 font-bold">0</span></div>
+                        <div class="font-bold text-lg" id="timer">01:00</div>
+                    </div>
+                </div>
+                <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900" style="height: 520px;">
+                    <div id="pano" class="absolute inset-0"></div>
+                    <div id="guess-map-wrapper" class="absolute bottom-3 right-3 w-72 h-56 hover:w-96 hover:h-72 transition-all duration-200 rounded-xl overflow-hidden border-2 border-slate-700 hover:border-brand-500 shadow-2xl bg-slate-900">
+                        <div id="guess-map" class="w-full h-full"></div>
+                        <button id="submit-guess" disabled class="absolute bottom-2 left-2 right-2 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-950 font-semibold text-sm transition">Поставь метку</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Round result -->
+            <div id="result-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-6">
+                <h3 class="text-lg font-semibold mb-3">
+                    <span id="result-headline">Раунд завершён</span>
+                </h3>
+                <div class="rounded-xl overflow-hidden border border-slate-800 mb-4" style="height: 320px;">
+                    <div id="result-map" class="w-full h-full"></div>
+                </div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm text-slate-400">Дистанция: <span id="result-distance" class="text-white font-semibold">—</span></div>
+                    <div class="text-2xl font-bold text-brand-400">+<span id="result-points">0</span></div>
+                </div>
+                <div class="text-center">
+                    <button id="next-btn" class="px-6 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">Следующий раунд →</button>
+                </div>
+            </div>
+
+            <!-- Game over -->
+            <div id="over-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-8 text-center">
+                <div class="text-5xl mb-2">🎯</div>
+                <h2 class="text-2xl font-bold mb-1">Финал</h2>
+                <p class="text-slate-400 text-sm mb-6">Опыт не сохраняется в соло-режиме.</p>
+                <div class="text-6xl font-bold text-brand-400 mb-2"><span id="final-score">0</span></div>
+                <div class="text-sm text-slate-400 mb-6">из 25000 возможных</div>
+                <div class="flex items-center justify-center gap-3">
+                    <button id="replay-btn" class="px-6 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-slate-950 font-semibold">↻ Сыграть ещё</button>
+                    <a href="{% url 'rooms:home' %}" class="px-6 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700">К комнатам</a>
+                </div>
+            </div>
+        </div>
+
+        <aside class="space-y-3">
+            <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+                <h3 class="text-sm font-semibold text-slate-300 mb-3">Раунды</h3>
+                <ul id="rounds-list" class="space-y-1.5 text-sm">
+                    {% for n in "12345" %}
+                    <li data-round="{{ forloop.counter }}" class="flex items-center justify-between px-3 py-2 rounded-md bg-slate-800/40 text-slate-500">
+                        <span>Раунд {{ forloop.counter }}</span>
+                        <span class="round-points text-xs">—</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 leading-relaxed">
+                💡 <b class="text-slate-200">Подсказка:</b> Чем точнее метка, тем больше очков. Максимум 5000 за раунд при идеальном попадании.
+            </div>
+        </aside>
+    </div>
+</div>
+
+{{ map_payload|json_script:"solo-data" }}
+<script src="{% static 'rooms/solo.js' %}?v=2"></script>
+{% endblock %}
