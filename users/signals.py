@@ -39,8 +39,6 @@ def _avatar_from_social(sociallogin) -> str:
         if avatar_id:
             return f'https://avatars.yandex.net/get-yapic/{avatar_id}/islands-200'
         return ''
-    if provider == 'vk':
-        return data.get('photo_200') or data.get('photo_100') or ''
     return ''
 
 

@@ -30,7 +30,6 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.yandex',
-    'allauth.socialaccount.providers.vk',
 
     'channels',
 ]
@@ -132,14 +131,6 @@ SOCIALACCOUNT_PROVIDERS = {
         'APP': {
             'client_id': os.getenv('YANDEX_CLIENT_ID', ''),
             'secret': os.getenv('YANDEX_CLIENT_SECRET', ''),
-            'key': '',
-        },
-    },
-    'vk': {
-        'SCOPE': ['email'],
-        'APP': {
-            'client_id': os.getenv('VK_CLIENT_ID', ''),
-            'secret': os.getenv('VK_CLIENT_SECRET', ''),
             'key': '',
         },
     },

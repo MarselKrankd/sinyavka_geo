@@ -31,7 +31,6 @@ class Command(BaseCommand):
 
         providers = {
             'yandex': (os.getenv('YANDEX_CLIENT_ID', ''), os.getenv('YANDEX_CLIENT_SECRET', '')),
-            'vk': (os.getenv('VK_CLIENT_ID', ''), os.getenv('VK_CLIENT_SECRET', '')),
         }
         for provider, (client_id, secret) in providers.items():
             if not client_id:
