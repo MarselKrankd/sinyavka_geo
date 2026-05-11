@@ -54,10 +54,10 @@
                     <div>Раунд <span id="round-num" class="font-bold text-brand-400">1</span> / <span id="round-total">{{ room.rounds_total }}</span></div>
                     <div class="font-bold text-lg" id="timer">--:--</div>
                 </div>
-                <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900" style="height: 480px;">
+                <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900" style="height: 560px;">
                     <div id="pano" class="absolute inset-0"></div>
-                    <!-- Mini guess map overlay (expandable) -->
-                    <div id="guess-map-wrapper" class="absolute bottom-3 right-3 w-72 h-56 hover:w-96 hover:h-72 transition-all duration-200 rounded-xl overflow-hidden border-2 border-slate-700 hover:border-brand-500 shadow-2xl bg-slate-900">
+                    <!-- Guess map overlay (expandable on hover) -->
+                    <div id="guess-map-wrapper" class="absolute bottom-3 right-3 w-[420px] h-[300px] hover:w-[560px] hover:h-[400px] transition-all duration-200 rounded-xl overflow-hidden border-2 border-slate-700 hover:border-brand-500 shadow-2xl bg-slate-900">
                         <div id="guess-map" class="w-full h-full"></div>
                         <button id="submit-guess" disabled class="absolute bottom-2 left-2 right-2 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-950 font-semibold text-sm transition">Поставь метку</button>
                     </div>
@@ -117,11 +117,12 @@
         "label": "{{ map_def.label|escapejs }}",
         "center": [{{ map_def.center.0 }}, {{ map_def.center.1 }}],
         "zoom": {{ map_def.zoom }},
+        "max_zoom": {{ map_def.max_zoom }},
         "bounds": [{{ map_def.bounds.0 }}, {{ map_def.bounds.1 }}, {{ map_def.bounds.2 }}, {{ map_def.bounds.3 }}]
     },
     "me": "{{ user.username|escapejs }}"
 }
 </script>
 
-<script src="{% load static %}{% static 'rooms/game.js' %}?v=4"></script>
+<script src="{% load static %}{% static 'rooms/game.js' %}?v=5"></script>
 {% endblock %}

@@ -3,6 +3,7 @@
     const MAP = JSON.parse(document.getElementById('solo-data').textContent);
     const TOTAL_ROUNDS = 5;
     const ROUND_SECONDS = 60;
+    const MAX_ZOOM = MAP.max_zoom || 15;
 
     const $ = (id) => document.getElementById(id);
     const introPanel = $('intro-panel');
@@ -20,7 +21,7 @@
     let round = 0;
     let totalScore = 0;
     let actual = null;       // {lat, lng}
-    let pendingGuess = null; // {lat, lng}
+    let pendingGuess = null;
     let panoPlayer = null;
     let guessMap = null;
     let guessMarker = null;
@@ -29,6 +30,8 @@
     let timerInterval = null;
     let timeLeft = 0;
     let roundEnded = false;
+    const usedPoints = new Set();
+    const usedRandoms = []; // random fallback points already taken
 
     let ymapsReady = false;
     const ymapsReadyCbs = [];
@@ -53,6 +56,8 @@
     function resetAll() {
         round = 0;
         totalScore = 0;
+        usedPoints.clear();
+        usedRandoms.length = 0;
         scoreTotalEl.textContent = '0';
         document.querySelectorAll('#rounds-list li').forEach(li => {
             li.classList.remove('bg-amber-500/10', 'border-amber-500/30', 'text-amber-200', 'text-slate-200');
@@ -74,7 +79,7 @@
             pickPanoramaPoint().then(point => {
                 actual = point;
                 initPanorama(point);
-                initGuessMap(true);
+                initGuessMap();
                 startTimer(ROUND_SECONDS);
             });
         });
@@ -100,30 +105,58 @@
         li.querySelector('.round-points').textContent = `+${pts}`;
     }
 
-    // pick a point from the pool, retry if no panorama nearby (up to N tries)
+    // Pick an unused point from the pool that has a panorama nearby.
+    // If pool is exhausted, fall back to random points within bounds.
     function pickPanoramaPoint() {
-        const pool = MAP.points.slice();
+        const available = MAP.points
+            .map((p, i) => ({ p, i }))
+            .filter(({ i }) => !usedPoints.has(i));
         // shuffle
-        for (let i = pool.length - 1; i > 0; i--) {
+        for (let i = available.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [pool[i], pool[j]] = [pool[j], pool[i]];
+            [available[i], available[j]] = [available[j], available[i]];
         }
+
         return new Promise(resolve => {
-            const tryNext = (idx) => {
-                if (idx >= pool.length) {
-                    // fallback: take first
-                    return resolve({ lat: pool[0][0], lng: pool[0][1] });
-                }
-                const [lat, lng] = pool[idx];
-                ymaps.panorama.locate([lat, lng]).then(
+            const trySeq = (idx) => {
+                if (idx >= available.length) return tryRandom(0);
+                const { p, i } = available[idx];
+                ymaps.panorama.locate([p[0], p[1]]).then(
                     (panos) => {
-                        if (panos && panos.length) resolve({ lat, lng, panorama: panos[0] });
-                        else tryNext(idx + 1);
+                        if (panos && panos.length) {
+                            usedPoints.add(i);
+                            resolve({ lat: p[0], lng: p[1], panorama: panos[0] });
+                        } else {
+                            trySeq(idx + 1);
+                        }
                     },
-                    () => tryNext(idx + 1),
+                    () => trySeq(idx + 1),
                 );
             };
-            tryNext(0);
+            const tryRandom = (attempts) => {
+                if (attempts >= 12) {
+                    // last resort: just take the first available point even without pano
+                    const fb = available[0] || { p: MAP.points[0] };
+                    resolve({ lat: fb.p[0], lng: fb.p[1], panorama: null });
+                    return;
+                }
+                const b = MAP.bounds; // [south, west, north, east]
+                const lat = b[0] + Math.random() * (b[2] - b[0]);
+                const lng = b[1] + Math.random() * (b[3] - b[1]);
+                ymaps.panorama.locate([lat, lng]).then(
+                    (panos) => {
+                        if (panos && panos.length) {
+                            const pos = panos[0].getPosition();
+                            // pos = [lon, lat, ...] in api; use locate-input coords for consistency
+                            resolve({ lat, lng, panorama: panos[0] });
+                        } else {
+                            tryRandom(attempts + 1);
+                        }
+                    },
+                    () => tryRandom(attempts + 1),
+                );
+            };
+            trySeq(0);
         });
     }
 
@@ -136,28 +169,14 @@
                 direction: [Math.random() * 360, 0],
                 controls: ['zoomControl'],
                 hotkeysEnabled: true,
+                suppressMapOpenBlock: true,
             });
         } else {
-            ymaps.panorama.locate([point.lat, point.lng]).then(
-                (panos) => {
-                    if (panos && panos.length) {
-                        panoPlayer = new ymaps.panorama.Player('pano', panos[0], {
-                            direction: [Math.random() * 360, 0],
-                            controls: ['zoomControl'],
-                            hotkeysEnabled: true,
-                        });
-                    } else {
-                        target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm text-center p-4">Здесь нет панорамы — но локация всё равно реальная. Угадай по карте.</div>';
-                    }
-                },
-                () => {
-                    target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm">Не удалось загрузить панораму.</div>';
-                }
-            );
+            target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm text-center p-4">Здесь нет панорамы. Угадай по карте.</div>';
         }
     }
 
-    function initGuessMap(reset) {
+    function initGuessMap() {
         if (!guessMap) {
             const b = MAP.bounds;
             guessMap = new ymaps.Map('guess-map', {
@@ -167,6 +186,9 @@
             }, {
                 restrictMapArea: [[b[0], b[1]], [b[2], b[3]]],
                 suppressMapOpenBlock: true,
+                maxZoom: MAX_ZOOM,
+                minZoom: 9,
+                yandexMapDisablePoiInteractivity: true,
             });
             guessMap.events.add('click', (e) => {
                 if (roundEnded) return;
@@ -189,13 +211,14 @@
             if (guessMarker) { guessMap.geoObjects.remove(guessMarker); guessMarker = null; }
             guessMap.setCenter(MAP.center, MAP.zoom);
         }
+        // make sure the map adjusts to the (potentially newly-visible) container
+        requestAnimationFrame(() => guessMap.container.fitToViewport());
     }
 
     function commitGuess() {
         roundEnded = true;
         stopTimer();
         const dist = haversine(pendingGuess.lat, pendingGuess.lng, actual.lat, actual.lng);
-        // bonus for remaining time: up to +500 if guessed in first half
         const speedBonus = Math.max(0, Math.floor((timeLeft / ROUND_SECONDS) * 500));
         const base = pointsFromDistance(dist, MAP.max_distance_m);
         const pts = Math.min(5000, base + speedBonus);
@@ -204,7 +227,6 @@
 
     function autoMissRound() {
         roundEnded = true;
-        // no guess => max distance, 0 points
         finishRound(MAP.max_distance_m, 0, 0);
     }
 
@@ -217,33 +239,58 @@
         $('result-points').textContent = String(pts);
         $('result-headline').innerHTML = `Раунд ${round} · <span class="text-slate-400 text-sm">${speedBonus ? `+${speedBonus} за скорость` : 'без бонуса за скорость'}</span>`;
         nextBtn.textContent = round >= TOTAL_ROUNDS ? 'Показать финал →' : 'Следующий раунд →';
-        whenReady(() => renderResultMap(dist));
+        // wait for layout (result-panel was hidden), then render the map fresh
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            whenReady(() => renderResultMap(dist));
+        }));
     }
 
     function renderResultMap(dist) {
-        if (!resultMap) {
-            resultMap = new ymaps.Map('result-map', {
-                center: [actual.lat, actual.lng],
-                zoom: 10,
-                controls: ['zoomControl'],
-            }, { suppressMapOpenBlock: true });
+        // Always rebuild fresh — avoids stale size or stale objects.
+        if (resultMap) {
+            try { resultMap.destroy(); } catch (e) {}
+            resultMap = null;
+            resultObjects = [];
         }
-        resultObjects.forEach(o => resultMap.geoObjects.remove(o));
-        resultObjects = [];
+        resultMap = new ymaps.Map('result-map', {
+            center: [actual.lat, actual.lng],
+            zoom: 10,
+            controls: ['zoomControl'],
+        }, {
+            suppressMapOpenBlock: true,
+            maxZoom: 15,
+        });
 
-        const a = new ymaps.Placemark([actual.lat, actual.lng], { hintContent: 'Настоящая локация' }, { preset: 'islands#redStarIcon' });
+        const a = new ymaps.Placemark(
+            [actual.lat, actual.lng],
+            { hintContent: 'Настоящая локация', balloonContent: `Настоящая локация` },
+            { preset: 'islands#redStarIcon' },
+        );
         resultMap.geoObjects.add(a); resultObjects.push(a);
+
         const coords = [[actual.lat, actual.lng]];
         if (pendingGuess) {
-            const g = new ymaps.Placemark([pendingGuess.lat, pendingGuess.lng], { hintContent: `Твоя метка — ${(dist/1000).toFixed(2)} км` }, { preset: 'islands#blueCircleDotIcon' });
-            const line = new ymaps.Polyline([[pendingGuess.lat, pendingGuess.lng], [actual.lat, actual.lng]], {}, { strokeColor: '#22d3ee', strokeWidth: 2, strokeStyle: 'shortdash' });
-            resultMap.geoObjects.add(g); resultMap.geoObjects.add(line);
+            const g = new ymaps.Placemark(
+                [pendingGuess.lat, pendingGuess.lng],
+                { hintContent: `Твоя метка — ${(dist/1000).toFixed(2)} км`, balloonContent: `Ошибка: ${(dist/1000).toFixed(2)} км` },
+                { preset: 'islands#blueCircleDotIconWithCaption', iconCaption: 'ты' },
+            );
+            const line = new ymaps.Polyline(
+                [[pendingGuess.lat, pendingGuess.lng], [actual.lat, actual.lng]],
+                { hintContent: `${(dist/1000).toFixed(2)} км` },
+                { strokeColor: '#22d3ee', strokeWidth: 2, strokeStyle: 'shortdash' },
+            );
+            resultMap.geoObjects.add(g);
+            resultMap.geoObjects.add(line);
             resultObjects.push(g, line);
             coords.push([pendingGuess.lat, pendingGuess.lng]);
         }
         if (coords.length > 1) {
             const lats = coords.map(c => c[0]), lngs = coords.map(c => c[1]);
-            resultMap.setBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], { checkZoomRange: true, zoomMargin: 40 });
+            const bounds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+            requestAnimationFrame(() => {
+                resultMap.setBounds(bounds, { checkZoomRange: true, zoomMargin: 50 });
+            });
         }
     }
 

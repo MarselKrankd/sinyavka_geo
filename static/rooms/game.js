@@ -20,6 +20,8 @@
     const roundNum = $('round-num');
     const playerCount = $('player-count');
 
+    const MAX_ZOOM = data.map.max_zoom || 15;
+
     let panoPlayer = null;
     let guessMap = null;
     let guessMarker = null;
@@ -31,23 +33,18 @@
     let ymapsReady = false;
     const ymapsReadyCbs = [];
 
-    // ymaps loads via script tag in template; wait for it
     function whenYmapsReady(cb) {
         if (ymapsReady) return cb();
         ymapsReadyCbs.push(cb);
     }
-    if (window.ymaps) {
-        ymaps.ready(() => { ymapsReady = true; ymapsReadyCbs.splice(0).forEach(c => c()); });
-    } else {
+    function markReady() { ymapsReady = true; ymapsReadyCbs.splice(0).forEach(c => c()); }
+    if (window.ymaps) ymaps.ready(markReady);
+    else {
         const wait = setInterval(() => {
-            if (window.ymaps) {
-                clearInterval(wait);
-                ymaps.ready(() => { ymapsReady = true; ymapsReadyCbs.splice(0).forEach(c => c()); });
-            }
+            if (window.ymaps) { clearInterval(wait); ymaps.ready(markReady); }
         }, 100);
     }
 
-    // ---- copy link ----
     $('copy-link')?.addEventListener('click', () => {
         navigator.clipboard.writeText(location.href).then(() => {
             const btn = $('copy-link');
@@ -57,7 +54,6 @@
         });
     });
 
-    // ---- chat ----
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const text = chatInput.value.trim();
@@ -73,14 +69,12 @@
         chatLog.scrollTop = chatLog.scrollHeight;
     }
 
-    // ---- start button (host) ----
     startBtn?.addEventListener('click', () => {
         ws.send(JSON.stringify({ action: 'start' }));
         startBtn.disabled = true;
         startBtn.textContent = 'Запускаю...';
     });
 
-    // ---- websocket ----
     ws.addEventListener('open', () => logChat('<span class="text-emerald-400">● подключено</span>'));
     ws.addEventListener('close', () => logChat('<span class="text-rose-400">● разрыв связи</span>'));
     ws.addEventListener('message', (ev) => {
@@ -97,8 +91,7 @@
         }
     });
 
-    function onState(msg) {
-        const players = msg.players || [];
+    function renderPlayers(players) {
         playerCount.textContent = `${players.length} в комнате`;
         playersList.innerHTML = players.map(p => `
             <li class="flex items-center gap-2 text-sm">
@@ -110,14 +103,16 @@
                         ${escapeHtml(p.nickname || p.username)}
                         ${p.is_host ? '<span class="text-xs text-amber-400 ml-1">👑</span>' : ''}
                     </div>
-                    <div class="text-xs text-slate-500">LVL ${p.level} · ${p.score} очков</div>
+                    <div class="text-xs text-slate-500">LVL ${p.level} · <b class="text-brand-400">${p.score}</b> очков</div>
                 </div>
             </li>
         `).join('');
+    }
 
+    function onState(msg) {
+        renderPlayers(msg.players || []);
         const statusMap = { lobby: 'Лобби', in_game: 'Игра идёт', finished: 'Завершена' };
         roomStatus.textContent = statusMap[msg.room.status] || msg.room.status;
-
         if (msg.room.status === 'lobby') {
             show(lobbyPanel); hide(gamePanel); hide(resultPanel); hide(overPanel);
         }
@@ -128,10 +123,13 @@
         pendingGuess = null;
         hide(lobbyPanel); hide(resultPanel); hide(overPanel); show(gamePanel);
         roundNum.textContent = msg.number;
-        whenYmapsReady(() => {
-            initPanorama(msg.lat, msg.lng);
-            initGuessMap();
-        });
+        // wait two RAFs so the now-visible panels have settled their layout
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            whenYmapsReady(() => {
+                initPanorama(msg.lat, msg.lng);
+                initGuessMap();
+            });
+        }));
         startTimer(msg.duration);
         submitBtn.disabled = true;
         submitBtn.textContent = 'Поставь метку';
@@ -141,7 +139,9 @@
         roundEnded = true;
         stopTimer();
         show(resultPanel);
-        whenYmapsReady(() => renderResultMap(msg));
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            whenYmapsReady(() => renderResultMap(msg));
+        }));
         $('result-list').innerHTML = msg.guesses.map((g, i) => `
             <div class="flex items-center justify-between px-3 py-2 rounded-md ${i === 0 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-800/40'}">
                 <span class="font-semibold">${i+1}. ${escapeHtml(g.user)}</span>
@@ -170,14 +170,13 @@
         }).join('');
     }
 
-    // ---- Yandex Panorama ----
     function initPanorama(lat, lng) {
         const target = $('pano');
         target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-slate-500 text-sm">Загружаю панораму…</div>';
         ymaps.panorama.locate([lat, lng], { layer: 'yandex#panorama' }).then(
             (panoramas) => {
                 if (!panoramas.length) {
-                    target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm text-center p-4">Здесь нет панорамы. Жди следующего раунда или продолжай гадать по карте.</div>';
+                    target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm text-center p-4">Здесь нет панорамы. Угадай по карте, ход пропускать не нужно.</div>';
                     return;
                 }
                 if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
@@ -186,6 +185,7 @@
                     direction: [Math.random() * 360, 0],
                     controls: ['zoomControl'],
                     hotkeysEnabled: true,
+                    suppressMapOpenBlock: true,
                 });
             },
             (err) => {
@@ -195,19 +195,20 @@
         );
     }
 
-    // ---- guess map ----
     function initGuessMap() {
-        const bounds = data.map.bounds; // [south, west, north, east]
+        const b = data.map.bounds;
         if (!guessMap) {
             guessMap = new ymaps.Map('guess-map', {
                 center: data.map.center,
                 zoom: data.map.zoom,
                 controls: ['zoomControl'],
             }, {
-                restrictMapArea: [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+                restrictMapArea: [[b[0], b[1]], [b[2], b[3]]],
                 suppressMapOpenBlock: true,
+                maxZoom: MAX_ZOOM,
+                minZoom: 9,
+                yandexMapDisablePoiInteractivity: true,
             });
-            guessMap.behaviors.disable('rightMouseButtonMagnifier');
             guessMap.events.add('click', (e) => {
                 if (roundEnded) return;
                 const coords = e.get('coords');
@@ -230,18 +231,24 @@
             if (guessMarker) { guessMap.geoObjects.remove(guessMarker); guessMarker = null; }
             pendingGuess = null;
         }
+        requestAnimationFrame(() => guessMap.container.fitToViewport());
     }
 
     function renderResultMap(msg) {
-        if (!resultMap) {
-            resultMap = new ymaps.Map('result-map', {
-                center: [msg.actual.lat, msg.actual.lng],
-                zoom: 10,
-                controls: ['zoomControl'],
-            }, { suppressMapOpenBlock: true });
+        // Always rebuild fresh — guarantees correct sizing and clean state.
+        if (resultMap) {
+            try { resultMap.destroy(); } catch (e) {}
+            resultMap = null;
+            resultObjects = [];
         }
-        resultObjects.forEach(o => resultMap.geoObjects.remove(o));
-        resultObjects = [];
+        resultMap = new ymaps.Map('result-map', {
+            center: [msg.actual.lat, msg.actual.lng],
+            zoom: 10,
+            controls: ['zoomControl'],
+        }, {
+            suppressMapOpenBlock: true,
+            maxZoom: 15,
+        });
 
         const actual = new ymaps.Placemark(
             [msg.actual.lat, msg.actual.lng],
@@ -261,7 +268,7 @@
             );
             const line = new ymaps.Polyline(
                 [[g.lat, g.lng], [msg.actual.lat, msg.actual.lng]],
-                {},
+                { hintContent: `${(g.distance_m/1000).toFixed(2)} км` },
                 { strokeColor: '#22d3ee', strokeWidth: 2, strokeStyle: 'shortdash' },
             );
             resultMap.geoObjects.add(guess);
@@ -270,14 +277,13 @@
             allCoords.push([g.lat, g.lng]);
         });
         if (allCoords.length > 1) {
-            resultMap.setBounds(coordsBounds(allCoords), { checkZoomRange: true, zoomMargin: 40 });
+            const lats = allCoords.map(c => c[0]);
+            const lngs = allCoords.map(c => c[1]);
+            const bounds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+            requestAnimationFrame(() => {
+                resultMap.setBounds(bounds, { checkZoomRange: true, zoomMargin: 50 });
+            });
         }
-    }
-
-    function coordsBounds(coords) {
-        const lats = coords.map(c => c[0]);
-        const lngs = coords.map(c => c[1]);
-        return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
     }
 
     submitBtn.addEventListener('click', () => {
@@ -288,7 +294,6 @@
         roundEnded = true;
     });
 
-    // ---- timer ----
     function startTimer(seconds) {
         stopTimer();
         let left = seconds;

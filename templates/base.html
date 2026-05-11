@@ -26,6 +26,27 @@
     <style>
         body { font-family: 'Inter', system-ui, sans-serif; }
         .ring-brand { box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.6); }
+
+        /* Yandex panorama: hide address/business/metro/POI labels and "open in maps" link
+           so players can't read the location off house number signs. Keep transition
+           arrows (direction-marker) so movement still works. */
+        [class*="-panorama"][class*="marker_type_address"],
+        [class*="-panorama"][class*="marker_type_business"],
+        [class*="-panorama"][class*="marker_type_metro"],
+        [class*="-panorama"][class*="marker_type_aoi"],
+        [class*="-panorama"][class*="marker_type_organization"],
+        [class*="-panorama"][class*="marker-content"]:not([class*="direction"]):not([class*="connect"]),
+        [class*="-panorama-go-to-map"],
+        [class*="-panorama__hint"],
+        [class*="-panorama__panel"],
+        [class*="-panorama__copyright"] {
+            display: none !important;
+        }
+
+        /* Hide POI hover/click hints on Yandex map (POIs themselves can stay subtle) */
+        [class*="-hint__text"] {
+            display: none !important;
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>

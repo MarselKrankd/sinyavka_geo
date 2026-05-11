@@ -146,6 +146,8 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             'guesses': results,
             'totals': totals,
         })
+        # Refresh sidebar scores for everyone in the room.
+        await self._broadcast_state()
         await asyncio.sleep(ROUND_REVEAL_SEC)
         room = await self._reload_room()
         if rnd.number >= room.rounds_total:

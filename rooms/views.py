@@ -102,6 +102,7 @@ def solo(request, map_key):
         'label': map_def.label,
         'center': list(map_def.center),
         'zoom': map_def.zoom,
+        'max_zoom': map_def.max_zoom,
         'bounds': list(map_def.bounds),
         'points': [list(p) for p in map_def.points],
         'max_distance_m': map_def.max_distance_m,

@@ -1,7 +1,7 @@
 """Coordinate pools for each playable map.
 
-Hand-picked points where Google Street View imagery is known to exist. Bounds
-are used to clamp the guess map to the play area.
+Hand-picked points where Yandex Panoramas coverage is known to be good.
+Bounds are used to clamp the guess map to the play area.
 """
 
 from __future__ import annotations
@@ -18,37 +18,18 @@ class MapDef:
     zoom: int
     bounds: tuple[float, float, float, float]  # south, west, north, east
     points: tuple[tuple[float, float], ...]
-    # Max meaningful guess distance in metres — used to scale 0..5000 score.
     max_distance_m: float
+    max_zoom: int = 15
 
     def random_point(self) -> tuple[float, float]:
         return random.choice(self.points)
 
 
-SINYAVSKOE = MapDef(
-    key='sinyavskoe',
-    label='с. Синявское',
-    center=(47.2675, 39.2580),
-    zoom=14,
-    bounds=(47.245, 39.215, 47.290, 39.305),
-    points=(
-        (47.2680, 39.2545),
-        (47.2702, 39.2576),
-        (47.2664, 39.2611),
-        (47.2645, 39.2532),
-        (47.2718, 39.2640),
-        (47.2657, 39.2497),
-        (47.2691, 39.2718),
-        (47.2632, 39.2589),
-    ),
-    max_distance_m=8000,
-)
-
 ROSTOV = MapDef(
     key='rostov',
     label='Ростов-на-Дону',
     center=(47.2225, 39.7187),
-    zoom=12,
+    zoom=11,
     bounds=(47.150, 39.580, 47.330, 39.870),
     points=(
         (47.2225, 39.7187),
@@ -63,8 +44,15 @@ ROSTOV = MapDef(
         (47.2511, 39.7752),
         (47.2188, 39.8123),
         (47.1843, 39.6611),
+        (47.2620, 39.7392),
+        (47.2059, 39.7567),
+        (47.2806, 39.7301),
+        (47.2138, 39.7079),
+        (47.1924, 39.6920),
+        (47.2467, 39.7184),
     ),
     max_distance_m=40000,
+    max_zoom=15,
 )
 
 MOSCOW = MapDef(
@@ -89,9 +77,17 @@ MOSCOW = MapDef(
         (55.8311, 37.4844),
         (55.7039, 37.5305),
         (55.7702, 37.6781),
+        (55.7396, 37.6206),
+        (55.7613, 37.5816),
+        (55.7223, 37.6531),
+        (55.7867, 37.6128),
+        (55.6948, 37.5872),
+        (55.8156, 37.7044),
+        (55.7041, 37.7382),
     ),
     max_distance_m=100000,
+    max_zoom=14,
 )
 
-MAPS: dict[str, MapDef] = {m.key: m for m in (SINYAVSKOE, ROSTOV, MOSCOW)}
+MAPS: dict[str, MapDef] = {m.key: m for m in (ROSTOV, MOSCOW)}
 MAP_CHOICES = [(m.key, m.label) for m in MAPS.values()]

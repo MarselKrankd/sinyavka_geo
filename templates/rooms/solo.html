@@ -38,9 +38,9 @@
                         <div class="font-bold text-lg" id="timer">01:00</div>
                     </div>
                 </div>
-                <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900" style="height: 520px;">
+                <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900" style="height: 560px;">
                     <div id="pano" class="absolute inset-0"></div>
-                    <div id="guess-map-wrapper" class="absolute bottom-3 right-3 w-72 h-56 hover:w-96 hover:h-72 transition-all duration-200 rounded-xl overflow-hidden border-2 border-slate-700 hover:border-brand-500 shadow-2xl bg-slate-900">
+                    <div id="guess-map-wrapper" class="absolute bottom-3 right-3 w-[420px] h-[300px] hover:w-[560px] hover:h-[400px] transition-all duration-200 rounded-xl overflow-hidden border-2 border-slate-700 hover:border-brand-500 shadow-2xl bg-slate-900">
                         <div id="guess-map" class="w-full h-full"></div>
                         <button id="submit-guess" disabled class="absolute bottom-2 left-2 right-2 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-950 font-semibold text-sm transition">Поставь метку</button>
                     </div>
@@ -98,5 +98,5 @@
 </div>
 
 {{ map_payload|json_script:"solo-data" }}
-<script src="{% static 'rooms/solo.js' %}?v=2"></script>
+<script src="{% static 'rooms/solo.js' %}?v=3"></script>
 {% endblock %}
