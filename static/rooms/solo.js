@@ -4,6 +4,7 @@
     const TOTAL_ROUNDS = 5;
     const ROUND_SECONDS = 60;
     const MAX_ZOOM = MAP.max_zoom || 15;
+    const BOUNDS = MAP.bounds; // [south, west, north, east]
 
     const $ = (id) => document.getElementById(id);
     const introPanel = $('intro-panel');
@@ -20,18 +21,18 @@
 
     let round = 0;
     let totalScore = 0;
-    let actual = null;       // {lat, lng}
+    let actual = null;       // {lat, lng}  — where the panorama really is
     let pendingGuess = null;
     let panoPlayer = null;
     let guessMap = null;
     let guessMarker = null;
+    let boundsOverlay = null;
     let resultMap = null;
     let resultObjects = [];
     let timerInterval = null;
     let timeLeft = 0;
     let roundEnded = false;
     const usedPoints = new Set();
-    const usedRandoms = []; // random fallback points already taken
 
     let ymapsReady = false;
     const ymapsReadyCbs = [];
@@ -42,6 +43,14 @@
         const wait = setInterval(() => {
             if (window.ymaps) { clearInterval(wait); ymaps.ready(markReady); }
         }, 100);
+    }
+
+    // ResizeObserver: when guess-map wrapper expands on hover the inner map
+    // must refit, otherwise we get black bars.
+    const wrapper = $('guess-map-wrapper');
+    if (wrapper && 'ResizeObserver' in window) {
+        const ro = new ResizeObserver(() => { if (guessMap) guessMap.container.fitToViewport(); });
+        ro.observe(wrapper);
     }
 
     startBtn.addEventListener('click', () => { hide(introPanel); startRound(); });
@@ -57,7 +66,6 @@
         round = 0;
         totalScore = 0;
         usedPoints.clear();
-        usedRandoms.length = 0;
         scoreTotalEl.textContent = '0';
         document.querySelectorAll('#rounds-list li').forEach(li => {
             li.classList.remove('bg-amber-500/10', 'border-amber-500/30', 'text-amber-200', 'text-slate-200');
@@ -77,8 +85,16 @@
         show(gamePanel);
         whenReady(() => {
             pickPanoramaPoint().then(point => {
-                actual = point;
-                initPanorama(point);
+                if (!point) {
+                    // ultimate fallback: no panorama at all, skip this round
+                    actual = { lat: MAP.center[0], lng: MAP.center[1] };
+                    $('pano').innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm">Не удалось подобрать локацию с панорамой. Возможно лимит ключа на сегодня исчерпан.</div>';
+                    initGuessMap();
+                    startTimer(ROUND_SECONDS);
+                    return;
+                }
+                actual = { lat: point.lat, lng: point.lng };
+                initPanorama(point.panorama);
                 initGuessMap();
                 startTimer(ROUND_SECONDS);
             });
@@ -105,13 +121,18 @@
         li.querySelector('.round-points').textContent = `+${pts}`;
     }
 
-    // Pick an unused point from the pool that has a panorama nearby.
-    // If pool is exhausted, fall back to random points within bounds.
+    function inBounds(lat, lng) {
+        return lat >= BOUNDS[0] && lat <= BOUNDS[2] && lng >= BOUNDS[1] && lng <= BOUNDS[3];
+    }
+
+    // Find a panorama whose actual position is inside the playable bounds.
+    // Try pool points first (skipping already-used ones), then random points
+    // inside the bounds. Validate every result, retry if Yandex returned a
+    // panorama hundreds of km away (which it loves to do).
     function pickPanoramaPoint() {
         const available = MAP.points
             .map((p, i) => ({ p, i }))
             .filter(({ i }) => !usedPoints.has(i));
-        // shuffle
         for (let i = available.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [available[i], available[j]] = [available[j], available[i]];
@@ -123,35 +144,25 @@
                 const { p, i } = available[idx];
                 ymaps.panorama.locate([p[0], p[1]]).then(
                     (panos) => {
-                        if (panos && panos.length) {
-                            usedPoints.add(i);
-                            resolve({ lat: p[0], lng: p[1], panorama: panos[0] });
-                        } else {
-                            trySeq(idx + 1);
-                        }
+                        if (!panos || !panos.length) return trySeq(idx + 1);
+                        const pos = panos[0].getPosition(); // [lat, lng]
+                        if (!inBounds(pos[0], pos[1])) return trySeq(idx + 1);
+                        usedPoints.add(i);
+                        resolve({ lat: pos[0], lng: pos[1], panorama: panos[0] });
                     },
                     () => trySeq(idx + 1),
                 );
             };
             const tryRandom = (attempts) => {
-                if (attempts >= 12) {
-                    // last resort: just take the first available point even without pano
-                    const fb = available[0] || { p: MAP.points[0] };
-                    resolve({ lat: fb.p[0], lng: fb.p[1], panorama: null });
-                    return;
-                }
-                const b = MAP.bounds; // [south, west, north, east]
-                const lat = b[0] + Math.random() * (b[2] - b[0]);
-                const lng = b[1] + Math.random() * (b[3] - b[1]);
+                if (attempts >= 20) return resolve(null);
+                const lat = BOUNDS[0] + Math.random() * (BOUNDS[2] - BOUNDS[0]);
+                const lng = BOUNDS[1] + Math.random() * (BOUNDS[3] - BOUNDS[1]);
                 ymaps.panorama.locate([lat, lng]).then(
                     (panos) => {
-                        if (panos && panos.length) {
-                            const pos = panos[0].getPosition();
-                            // pos = [lon, lat, ...] in api; use locate-input coords for consistency
-                            resolve({ lat, lng, panorama: panos[0] });
-                        } else {
-                            tryRandom(attempts + 1);
-                        }
+                        if (!panos || !panos.length) return tryRandom(attempts + 1);
+                        const pos = panos[0].getPosition();
+                        if (!inBounds(pos[0], pos[1])) return tryRandom(attempts + 1);
+                        resolve({ lat: pos[0], lng: pos[1], panorama: panos[0] });
                     },
                     () => tryRandom(attempts + 1),
                 );
@@ -160,36 +171,54 @@
         });
     }
 
-    function initPanorama(point) {
+    function initPanorama(panorama) {
         const target = $('pano');
         target.innerHTML = '';
         if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
-        if (point.panorama) {
-            panoPlayer = new ymaps.panorama.Player('pano', point.panorama, {
-                direction: [Math.random() * 360, 0],
-                controls: ['zoomControl'],
-                hotkeysEnabled: true,
-                suppressMapOpenBlock: true,
-            });
-        } else {
-            target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm text-center p-4">Здесь нет панорамы. Угадай по карте.</div>';
-        }
+        panoPlayer = new ymaps.panorama.Player('pano', panorama, {
+            direction: [Math.random() * 360, 0],
+            controls: ['zoomControl'],
+            hotkeysEnabled: true,
+            suppressMapOpenBlock: true,
+        });
+    }
+
+    function drawBoundsOverlay(map) {
+        if (boundsOverlay) map.geoObjects.remove(boundsOverlay);
+        boundsOverlay = new ymaps.Polygon(
+            [[
+                [BOUNDS[0], BOUNDS[1]],
+                [BOUNDS[0], BOUNDS[3]],
+                [BOUNDS[2], BOUNDS[3]],
+                [BOUNDS[2], BOUNDS[1]],
+                [BOUNDS[0], BOUNDS[1]],
+            ]],
+            { hintContent: 'Зона панорам' },
+            {
+                fillColor: 'rgba(34, 211, 238, 0.06)',
+                strokeColor: '#22d3ee',
+                strokeWidth: 2,
+                strokeStyle: 'dash',
+                interactivityModel: 'default#transparent',
+            },
+        );
+        map.geoObjects.add(boundsOverlay);
     }
 
     function initGuessMap() {
         if (!guessMap) {
-            const b = MAP.bounds;
             guessMap = new ymaps.Map('guess-map', {
                 center: MAP.center,
                 zoom: MAP.zoom,
                 controls: ['zoomControl'],
             }, {
-                restrictMapArea: [[b[0], b[1]], [b[2], b[3]]],
+                restrictMapArea: [[BOUNDS[0], BOUNDS[1]], [BOUNDS[2], BOUNDS[3]]],
                 suppressMapOpenBlock: true,
                 maxZoom: MAX_ZOOM,
                 minZoom: 9,
                 yandexMapDisablePoiInteractivity: true,
             });
+            drawBoundsOverlay(guessMap);
             guessMap.events.add('click', (e) => {
                 if (roundEnded) return;
                 const coords = e.get('coords');
@@ -211,7 +240,6 @@
             if (guessMarker) { guessMap.geoObjects.remove(guessMarker); guessMarker = null; }
             guessMap.setCenter(MAP.center, MAP.zoom);
         }
-        // make sure the map adjusts to the (potentially newly-visible) container
         requestAnimationFrame(() => guessMap.container.fitToViewport());
     }
 
@@ -239,14 +267,12 @@
         $('result-points').textContent = String(pts);
         $('result-headline').innerHTML = `Раунд ${round} · <span class="text-slate-400 text-sm">${speedBonus ? `+${speedBonus} за скорость` : 'без бонуса за скорость'}</span>`;
         nextBtn.textContent = round >= TOTAL_ROUNDS ? 'Показать финал →' : 'Следующий раунд →';
-        // wait for layout (result-panel was hidden), then render the map fresh
         requestAnimationFrame(() => requestAnimationFrame(() => {
             whenReady(() => renderResultMap(dist));
         }));
     }
 
     function renderResultMap(dist) {
-        // Always rebuild fresh — avoids stale size or stale objects.
         if (resultMap) {
             try { resultMap.destroy(); } catch (e) {}
             resultMap = null;
@@ -263,21 +289,22 @@
 
         const a = new ymaps.Placemark(
             [actual.lat, actual.lng],
-            { hintContent: 'Настоящая локация', balloonContent: `Настоящая локация` },
+            { hintContent: 'Настоящая локация', iconCaption: 'настоящая' },
             { preset: 'islands#redStarIcon' },
         );
         resultMap.geoObjects.add(a); resultObjects.push(a);
 
         const coords = [[actual.lat, actual.lng]];
         if (pendingGuess) {
+            const km = (dist / 1000).toFixed(2);
             const g = new ymaps.Placemark(
                 [pendingGuess.lat, pendingGuess.lng],
-                { hintContent: `Твоя метка — ${(dist/1000).toFixed(2)} км`, balloonContent: `Ошибка: ${(dist/1000).toFixed(2)} км` },
-                { preset: 'islands#blueCircleDotIconWithCaption', iconCaption: 'ты' },
+                { hintContent: `Твоя метка — ${km} км`, iconCaption: `ты · ${km} км` },
+                { preset: 'islands#blueCircleDotIconWithCaption' },
             );
             const line = new ymaps.Polyline(
                 [[pendingGuess.lat, pendingGuess.lng], [actual.lat, actual.lng]],
-                { hintContent: `${(dist/1000).toFixed(2)} км` },
+                { hintContent: `${km} км` },
                 { strokeColor: '#22d3ee', strokeWidth: 2, strokeStyle: 'shortdash' },
             );
             resultMap.geoObjects.add(g);
@@ -287,9 +314,9 @@
         }
         if (coords.length > 1) {
             const lats = coords.map(c => c[0]), lngs = coords.map(c => c[1]);
-            const bounds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+            const bnds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
             requestAnimationFrame(() => {
-                resultMap.setBounds(bounds, { checkZoomRange: true, zoomMargin: 50 });
+                resultMap.setBounds(bnds, { checkZoomRange: true, zoomMargin: 60 });
             });
         }
     }

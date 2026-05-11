@@ -25,11 +25,14 @@
     let panoPlayer = null;
     let guessMap = null;
     let guessMarker = null;
+    let boundsOverlay = null;
     let pendingGuess = null;
     let roundEnded = false;
     let timerInterval = null;
     let resultMap = null;
     let resultObjects = [];
+    let currentRoundNumber = 0;
+    let panoMissingReported = false;
     let ymapsReady = false;
     const ymapsReadyCbs = [];
 
@@ -43,6 +46,14 @@
         const wait = setInterval(() => {
             if (window.ymaps) { clearInterval(wait); ymaps.ready(markReady); }
         }, 100);
+    }
+
+    // ResizeObserver: when the guess-map wrapper grows on hover, kill the
+    // black bars by asking ymaps to refit to the new container size.
+    const wrapper = $('guess-map-wrapper');
+    if (wrapper && 'ResizeObserver' in window) {
+        const ro = new ResizeObserver(() => { if (guessMap) guessMap.container.fitToViewport(); });
+        ro.observe(wrapper);
     }
 
     $('copy-link')?.addEventListener('click', () => {
@@ -119,18 +130,23 @@
     }
 
     function onRoundStarted(msg) {
+        // The same round number can arrive twice if the server retried after a
+        // pano_missing report — accept that, just reinit the panorama.
+        const isRetry = msg.number === currentRoundNumber;
+        currentRoundNumber = msg.number;
+        if (!isRetry) panoMissingReported = false;
+
         roundEnded = false;
         pendingGuess = null;
         hide(lobbyPanel); hide(resultPanel); hide(overPanel); show(gamePanel);
         roundNum.textContent = msg.number;
-        // wait two RAFs so the now-visible panels have settled their layout
         requestAnimationFrame(() => requestAnimationFrame(() => {
             whenYmapsReady(() => {
                 initPanorama(msg.lat, msg.lng);
                 initGuessMap();
             });
         }));
-        startTimer(msg.duration);
+        if (!isRetry) startTimer(msg.duration);
         submitBtn.disabled = true;
         submitBtn.textContent = 'Поставь метку';
     }
@@ -138,6 +154,7 @@
     function onRoundResult(msg) {
         roundEnded = true;
         stopTimer();
+        hide(gamePanel);  // <-- must hide, or the panorama covers the result map
         show(resultPanel);
         requestAnimationFrame(() => requestAnimationFrame(() => {
             whenYmapsReady(() => renderResultMap(msg));
@@ -176,7 +193,12 @@
         ymaps.panorama.locate([lat, lng], { layer: 'yandex#panorama' }).then(
             (panoramas) => {
                 if (!panoramas.length) {
-                    target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm text-center p-4">Здесь нет панорамы. Угадай по карте, ход пропускать не нужно.</div>';
+                    // Tell the server: bad spot, ship us another point.
+                    if (!panoMissingReported) {
+                        panoMissingReported = true;
+                        ws.send(JSON.stringify({ action: 'pano_missing' }));
+                        target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-slate-500 text-sm">Беру другую локацию…</div>';
+                    }
                     return;
                 }
                 if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
@@ -190,9 +212,34 @@
             },
             (err) => {
                 console.error('panorama locate failed', err);
-                target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm">Не удалось загрузить панораму.</div>';
+                if (!panoMissingReported) {
+                    panoMissingReported = true;
+                    ws.send(JSON.stringify({ action: 'pano_missing' }));
+                }
             }
         );
+    }
+
+    function drawBoundsOverlay(map, bounds) {
+        if (boundsOverlay) { map.geoObjects.remove(boundsOverlay); }
+        boundsOverlay = new ymaps.Polygon(
+            [[
+                [bounds[0], bounds[1]],
+                [bounds[0], bounds[3]],
+                [bounds[2], bounds[3]],
+                [bounds[2], bounds[1]],
+                [bounds[0], bounds[1]],
+            ]],
+            { hintContent: 'Зона панорам' },
+            {
+                fillColor: 'rgba(34, 211, 238, 0.06)',
+                strokeColor: '#22d3ee',
+                strokeWidth: 2,
+                strokeStyle: 'dash',
+                interactivityModel: 'default#transparent',
+            },
+        );
+        map.geoObjects.add(boundsOverlay);
     }
 
     function initGuessMap() {
@@ -209,6 +256,7 @@
                 minZoom: 9,
                 yandexMapDisablePoiInteractivity: true,
             });
+            drawBoundsOverlay(guessMap, b);
             guessMap.events.add('click', (e) => {
                 if (roundEnded) return;
                 const coords = e.get('coords');
@@ -235,7 +283,6 @@
     }
 
     function renderResultMap(msg) {
-        // Always rebuild fresh — guarantees correct sizing and clean state.
         if (resultMap) {
             try { resultMap.destroy(); } catch (e) {}
             resultMap = null;
@@ -252,7 +299,7 @@
 
         const actual = new ymaps.Placemark(
             [msg.actual.lat, msg.actual.lng],
-            { hintContent: 'Настоящая локация' },
+            { hintContent: 'Настоящая локация', iconCaption: 'настоящая' },
             { preset: 'islands#redStarIcon' },
         );
         resultMap.geoObjects.add(actual);
@@ -261,14 +308,15 @@
         const allCoords = [[msg.actual.lat, msg.actual.lng]];
         msg.guesses.forEach(g => {
             if (!g.lat && !g.lng) return;
+            const km = (g.distance_m / 1000).toFixed(2);
             const guess = new ymaps.Placemark(
                 [g.lat, g.lng],
-                { hintContent: `${g.user}: ${(g.distance_m/1000).toFixed(2)} км · ${g.points} очков` },
-                { preset: 'islands#blueCircleDotIconWithCaption', iconCaption: g.user.slice(0, 6) },
+                { hintContent: `${g.user}: ${km} км · ${g.points} очков`, iconCaption: `${g.user} · ${km} км` },
+                { preset: 'islands#blueCircleDotIconWithCaption' },
             );
             const line = new ymaps.Polyline(
                 [[g.lat, g.lng], [msg.actual.lat, msg.actual.lng]],
-                { hintContent: `${(g.distance_m/1000).toFixed(2)} км` },
+                { hintContent: `${km} км` },
                 { strokeColor: '#22d3ee', strokeWidth: 2, strokeStyle: 'shortdash' },
             );
             resultMap.geoObjects.add(guess);
@@ -279,9 +327,9 @@
         if (allCoords.length > 1) {
             const lats = allCoords.map(c => c[0]);
             const lngs = allCoords.map(c => c[1]);
-            const bounds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+            const bnds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
             requestAnimationFrame(() => {
-                resultMap.setBounds(bounds, { checkZoomRange: true, zoomMargin: 50 });
+                resultMap.setBounds(bnds, { checkZoomRange: true, zoomMargin: 60 });
             });
         }
     }

@@ -29,6 +29,9 @@ from .scoring import haversine_m, points_from_distance
 
 
 ROUND_REVEAL_SEC = 6
+MAX_PANO_RETRIES = 6
+# per-round retry counters (cleared when a new round starts)
+_PANO_RETRIES: dict[int, int] = {}
 
 
 class RoomConsumer(AsyncJsonWebsocketConsumer):
@@ -59,6 +62,8 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             await self._handle_start()
         elif action == 'guess':
             await self._handle_guess(content)
+        elif action == 'pano_missing':
+            await self._handle_pano_missing()
         elif action == 'chat':
             text = (content.get('text') or '').strip()[:200]
             if text:
@@ -78,6 +83,32 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         if room.status != Room.Status.LOBBY:
             return
         await self._start_round(1)
+
+    async def _handle_pano_missing(self):
+        room = await self._reload_room()
+        if room.status != Room.Status.IN_GAME:
+            return
+        rnd = await self._current_round(room)
+        if rnd is None or rnd.ended_at is not None:
+            return
+        # Cap retries per round so we don't loop forever on a broken pool.
+        count = _PANO_RETRIES.get(rnd.pk, 0)
+        if count >= MAX_PANO_RETRIES:
+            return
+        _PANO_RETRIES[rnd.pk] = count + 1
+        lat, lng = room.map_def.random_point()
+        await database_sync_to_async(self._update_round_coords_sync)(rnd.pk, lat, lng)
+        # Rebroadcast round_started with the same number — clients reinit the
+        # panorama and keep their existing timer.
+        await self._broadcast({
+            'type': 'round_started',
+            'number': rnd.number,
+            'total': room.rounds_total,
+            'lat': lat,
+            'lng': lng,
+            'map_key': room.map_key,
+            'duration': room.round_duration_sec,
+        })
 
     async def _handle_guess(self, content):
         try:
@@ -183,8 +214,13 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
     def _current_round(self, room):
         return room.rounds.order_by('-number').first()
 
+    def _update_round_coords_sync(self, round_id, lat, lng):
+        Round.objects.filter(pk=round_id).update(lat=lat, lng=lng)
+
     @database_sync_to_async
     def _create_guess(self, rnd, lat, lng, max_distance_m):
+        # Coords may have changed via pano_missing retry, refresh before scoring.
+        rnd.refresh_from_db(fields=['lat', 'lng'])
         if Guess.objects.filter(round=rnd, user=self.user).exists():
             return False
         dist = haversine_m(rnd.lat, rnd.lng, lat, lng)
