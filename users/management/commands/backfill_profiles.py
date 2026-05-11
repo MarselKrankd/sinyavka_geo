@@ -14,7 +14,6 @@ from django.core.management.base import BaseCommand
 from users.models import PlayerProfile
 from users.signals import _unique_nickname
 
-
 class Command(BaseCommand):
     help = 'Create PlayerProfile for every User missing one'
 

@@ -126,8 +126,6 @@ SOCIALACCOUNT_LOGIN_ON_GET = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
 SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'
 
-# SocialApp rows live in the DB (managed by `manage.py setup_site`),
-# don't duplicate them via the APP key here or allauth raises MultipleObjectsReturned.
 SOCIALACCOUNT_PROVIDERS = {
     'yandex': {},
 }

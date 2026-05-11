@@ -12,14 +12,13 @@ import os
 
 from django.core.management.base import BaseCommand
 
-
 class Command(BaseCommand):
     help = 'Print the redirect_uri values to register on oauth.yandex.ru'
 
     def handle(self, *args, **options):
         client_id = os.getenv('YANDEX_CLIENT_ID', '')
         host = os.getenv('SITE_DOMAIN', 'localhost:8000')
-        # Strip protocol if accidentally pasted in.
+
         host = host.replace('http://', '').replace('https://', '').rstrip('/')
         path = '/accounts/yandex/login/callback/'
 

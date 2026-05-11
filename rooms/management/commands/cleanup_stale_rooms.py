@@ -23,7 +23,6 @@ from django.utils import timezone
 
 from rooms.models import Room
 
-
 class Command(BaseCommand):
     help = 'Delete empty / stale lobby and in-game rooms'
 

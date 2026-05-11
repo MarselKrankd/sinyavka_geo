@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="max-w-7xl mx-auto px-4 py-8">
-    <!-- Solo mode -->
+
     <section class="mb-10">
         <div class="flex items-end justify-between mb-3">
             <div>
@@ -55,9 +55,7 @@
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center gap-2 text-slate-300">
                     <span class="inline-block w-2 h-2 rounded-full bg-brand-500"></span>
-                    {% if room.map_key == 'sinyavskoe' %}с. Синявское
-                    {% elif room.map_key == 'rostov' %}Ростов-на-Дону
-                    {% elif room.map_key == 'moscow' %}Москва{% endif %}
+                    {{ room.map.label }}
                 </div>
                 <div class="text-slate-400">
                     <span class="text-white font-semibold">{{ room.player_count }}</span>/{{ room.max_players }} · {{ room.rounds_total }} раундов

@@ -35,9 +35,9 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
-        <!-- Game area -->
+
         <div class="space-y-3">
-            <!-- Lobby state -->
+
             <div id="lobby-panel" class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 text-center">
                 <div class="text-5xl mb-3">⏳</div>
                 <h2 class="text-xl font-semibold mb-1">Ожидание игроков</h2>
@@ -49,7 +49,6 @@
                 {% endif %}
             </div>
 
-            <!-- Game state (hidden initially) -->
             <div id="game-panel" class="hidden">
                 <div class="flex items-center justify-between text-sm mb-2">
                     <div>Раунд <span id="round-num" class="font-bold text-brand-400">1</span> / <span id="round-total">{{ room.rounds_total }}</span></div>
@@ -57,7 +56,7 @@
                 </div>
                 <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900" style="height: 560px;">
                     <div id="pano" class="absolute inset-0"></div>
-                    <!-- Guess map overlay (expandable on hover) -->
+
                     <div id="guess-map-wrapper" class="absolute bottom-3 right-3 w-[420px] h-[300px] hover:w-[560px] hover:h-[400px] transition-all duration-200 rounded-xl overflow-hidden border-2 border-slate-700 hover:border-brand-500 shadow-2xl bg-slate-900">
                         <div id="guess-map" class="w-full h-full"></div>
                         <button id="submit-guess" disabled class="absolute bottom-2 left-2 right-2 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-950 font-semibold text-sm transition">Поставь метку</button>
@@ -65,7 +64,6 @@
                 </div>
             </div>
 
-            <!-- Round result (hidden initially) -->
             <div id="result-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-lg font-semibold">Результат раунда <span id="result-round-num" class="text-brand-400"></span></h3>
@@ -77,7 +75,6 @@
                 <div id="result-list" class="space-y-1.5 text-sm"></div>
             </div>
 
-            <!-- Game over (hidden initially) -->
             <div id="over-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-8">
                 <div class="text-center mb-6">
                     <div class="text-5xl mb-2">🏆</div>
@@ -90,7 +87,6 @@
             </div>
         </div>
 
-        <!-- Sidebar: players + chat -->
         <aside class="space-y-3">
             <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
                 <h3 class="text-sm font-semibold text-slate-300 mb-3 flex items-center justify-between">
@@ -111,12 +107,6 @@
     </div>
 </div>
 
-{% comment %}
-localize off: under LANGUAGE_CODE=ru-ru Django renders 47.2357 as
-"47,2357", which broke the inline JSON below — center: [47,2357, 39,718]
-parsed as four ints, ymaps got an invalid longitude and the map fell
-back to ocean tiles (the solid blue rectangle the user kept seeing).
-{% endcomment %}
 {% localize off %}
 <script id="room-data" type="application/json">
 {

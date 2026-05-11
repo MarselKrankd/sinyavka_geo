@@ -1,15 +1,13 @@
-/* sinyavka_geo — solo speedrun mode (no backend, no XP) */
+
 (() => {
-    // Rollback switch. Set to false (and hard-reload) if address pills
-    // stop being suppressed or if blanking the markers breaks the
-    // panorama. Mirrors the same flag in game.js.
+
     const HIDE_PANO_MARKERS = true;
 
     const MAP = JSON.parse(document.getElementById('solo-data').textContent);
     const TOTAL_ROUNDS = 5;
     const ROUND_SECONDS = 60;
     const MAX_ZOOM = MAP.max_zoom || 15;
-    const BOUNDS = MAP.bounds; // [south, west, north, east]
+    const BOUNDS = MAP.bounds;
 
     const $ = (id) => document.getElementById(id);
     const introPanel = $('intro-panel');
@@ -26,7 +24,7 @@
 
     let round = 0;
     let totalScore = 0;
-    let actual = null;       // {lat, lng}  — where the panorama really is
+    let actual = null;
     let pendingGuess = null;
     let panoPlayer = null;
     let guessMap = null;
@@ -50,29 +48,17 @@
         }, 100);
     }
 
-    // ResizeObserver: when guess-map wrapper expands on hover the inner map
-    // must refit, otherwise we get black bars.
     const wrapper = $('guess-map-wrapper');
     if (wrapper && 'ResizeObserver' in window) {
         const ro = new ResizeObserver(() => { if (guessMap) guessMap.container.fitToViewport(); });
         ro.observe(wrapper);
     }
 
-    // Aggressive runtime cleaner for Yandex panorama overlays (house number
-    // pills, transition arrows, hints, "Open in Maps" link). CSS handles the
-    // easy cases; this catches dynamic additions and class names we didn't
-    // anticipate.
-    //
-    // CRITICAL: never walk up to ancestors — the panorama Player wrapper's
-    // textContent transitively contains every overlay's text, so a parent
-    // walk would hide the panorama itself. Skip any element that has a
-    // canvas/video descendant (that's the imagery).
     const HIDE_STYLE = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
     function cleanPanoramaOverlays() {
         const pano = $('pano');
         if (!pano) return;
-        // Defer until imagery exists, otherwise we hide the wrappers the
-        // canvas is about to land in (-> black box).
+
         if (!pano.querySelector('canvas')) return;
         pano.querySelectorAll('*').forEach(el => {
             const tag = el.tagName;
@@ -85,8 +71,7 @@
                 el.style.cssText = HIDE_STYLE;
                 return;
             }
-            // Position-based fallback: any absolutely-positioned element with
-            // no canvas/video/zoom descendant is a decorative overlay.
+
             const computed = getComputedStyle(el);
             if (computed.position === 'absolute' || computed.position === 'fixed') {
                 if (el.querySelector('[class*="zoom"]')) return;
@@ -134,7 +119,7 @@
         whenReady(() => {
             pickPanoramaPoint().then(point => {
                 if (!point) {
-                    // ultimate fallback: no panorama at all, skip this round
+
                     actual = { lat: MAP.center[0], lng: MAP.center[1] };
                     $('pano').innerHTML = '<div class="absolute inset-0 grid place-items-center text-rose-400 text-sm">Не удалось подобрать локацию с панорамой. Возможно лимит ключа на сегодня исчерпан.</div>';
                     initGuessMap();

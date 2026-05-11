@@ -12,18 +12,11 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import RoomCreateForm
-from .locations import MAPS
-from .models import Membership, Room
+from .models import Map, Membership, Room
 from django.http import Http404
 
-
-# Rooms older than this with no memberships, or rooms in any non-finished
-# state that haven't seen activity for a long time, get cleaned up on the
-# next home page load. Avoids the home view drifting into a graveyard of
-# half-dead test rooms.
 EMPTY_ROOM_GRACE = timedelta(minutes=2)
 STALE_ROOM_CUTOFF = timedelta(hours=2)
-
 
 def _cleanup_stale_rooms():
     """Drop rooms nobody can finish: empty rooms (no memberships) past the
@@ -52,7 +45,6 @@ def _cleanup_stale_rooms():
     if stale_ids:
         Room.objects.filter(pk__in=stale_ids).delete()
 
-
 @login_required
 def home(request):
     _cleanup_stale_rooms()
@@ -60,16 +52,14 @@ def home(request):
         Room.objects.filter(is_private=False)
         .exclude(status=Room.Status.FINISHED)
         .annotate(player_count=Count('memberships'))
-        # Hide rooms with no real members — a final safety net in case
-        # cleanup didn't run yet (e.g., room just emptied this second).
+
         .filter(player_count__gt=0)
         .select_related('host')
     )
     return render(request, 'rooms/home.html', {
         'rooms': rooms,
-        'maps': MAPS,
+        'maps': {m.key: m for m in Map.objects.all()},
     })
-
 
 @login_required
 def create_room(request):
@@ -92,7 +82,6 @@ def create_room(request):
         form = RoomCreateForm()
     return render(request, 'rooms/create_room.html', {'form': form})
 
-
 @login_required
 def room_detail(request, code):
     room = get_object_or_404(
@@ -110,7 +99,6 @@ def room_detail(request, code):
         'map_def': room.map_def,
     })
 
-
 @login_required
 @require_POST
 def join_room(request, code):
@@ -124,23 +112,19 @@ def join_room(request, code):
     Membership.objects.get_or_create(room=room, user=request.user)
     return redirect(room)
 
-
 @login_required
 @require_POST
 def leave_room(request, code):
     room = get_object_or_404(Room, code=code)
     Membership.objects.filter(room=room, user=request.user).delete()
-    # Delete the room when no one's left, regardless of who's leaving — the
-    # previous version only deleted on host exit, so a non-host being the
-    # last to leave would orphan the room.
+
     if not room.memberships.exists():
         room.delete()
     return redirect('rooms:home')
 
-
 @login_required
 def solo(request, map_key):
-    map_def = MAPS.get(map_key)
+    map_def = Map.objects.filter(key=map_key).first()
     if not map_def:
         raise Http404('Карта не найдена')
     payload = {
@@ -157,7 +141,6 @@ def solo(request, map_key):
         'map_def': map_def,
         'map_payload': payload,
     })
-
 
 @login_required
 def profile(request):

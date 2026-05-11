@@ -1,10 +1,6 @@
-/* sinyavka_geo — multiplayer room client (Yandex Maps + Panoramas) */
+
 (() => {
-    // Rollback switch. Set to false (and hard-reload) if address pills /
-    // panorama markers stop being suppressed correctly or if blanking
-    // them breaks the panorama for some reason. true = strip markers
-    // before the panorama Player sees them; false = let Yandex render
-    // whatever it wants (rely only on the DOM-cleaner backstop).
+
     const HIDE_PANO_MARKERS = true;
 
     const data = JSON.parse(document.getElementById('room-data').textContent);

@@ -1,15 +1,13 @@
 from django import forms
 
-from .locations import MAP_CHOICES
-from .models import Room
-
+from .models import Map, Room
 
 class RoomCreateForm(forms.ModelForm):
-    map_key = forms.ChoiceField(choices=MAP_CHOICES, label='Карта')
+    map = forms.ModelChoiceField(queryset=Map.objects.all(), to_field_name='key', label='Карта', empty_label=None)
 
     class Meta:
         model = Room
-        fields = ['name', 'map_key', 'is_private', 'max_players', 'rounds_total', 'round_duration_sec']
+        fields = ['name', 'map', 'is_private', 'max_players', 'rounds_total', 'round_duration_sec']
         labels = {
             'name': 'Название комнаты',
             'is_private': 'Приватная (только по ссылке)',

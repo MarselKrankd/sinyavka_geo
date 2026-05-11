@@ -19,19 +19,19 @@
             <div>
                 <label class="block text-xs uppercase tracking-wide text-slate-400 mb-2">Карта</label>
                 <div class="grid grid-cols-2 gap-3">
-                    {% for value, label in form.map_key.field.choices %}
+                    {% for m in form.map.field.queryset %}
                     <label class="cursor-pointer">
-                        <input type="radio" name="map_key" value="{{ value }}" class="peer sr-only" {% if forloop.first %}checked{% endif %}>
+                        <input type="radio" name="map" value="{{ m.key }}" class="peer sr-only" {% if forloop.first %}checked{% endif %}>
                         <div class="border border-slate-700 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 rounded-xl p-4 text-center transition">
                             <div class="text-3xl mb-2">
-                                {% if value == 'rostov' %}🏙️{% else %}🏛️{% endif %}
+                                {% if m.key == 'rostov' %}🏙️{% else %}🏛️{% endif %}
                             </div>
-                            <div class="font-semibold text-sm">{{ label }}</div>
+                            <div class="font-semibold text-sm">{{ m.label }}</div>
                         </div>
                     </label>
                     {% endfor %}
                 </div>
-                {% if form.map_key.errors %}<div class="text-rose-400 text-xs mt-1">{{ form.map_key.errors|join:", " }}</div>{% endif %}
+                {% if form.map.errors %}<div class="text-rose-400 text-xs mt-1">{{ form.map.errors|join:", " }}</div>{% endif %}
             </div>
 
             <div class="grid grid-cols-3 gap-3">

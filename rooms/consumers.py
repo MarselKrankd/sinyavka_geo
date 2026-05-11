@@ -23,16 +23,13 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
 
-from .locations import MAPS
 from .models import Guess, Membership, Room, Round
 from .scoring import haversine_m, points_from_distance
 
-
 ROUND_REVEAL_SEC = 6
 MAX_PANO_RETRIES = 20
-# per-round retry counters (cleared when a new round starts)
-_PANO_RETRIES: dict[int, int] = {}
 
+_PANO_RETRIES: dict[int, int] = {}
 
 class RoomConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
@@ -55,16 +52,13 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, code):
         if hasattr(self, 'group_name'):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
-        # If the player vanished mid-round (closed tab, opened solo mode, etc.)
-        # lock them out with a 0-point miss so the round doesn't hang forever.
+
         if hasattr(self, 'code') and hasattr(self, 'user') and getattr(self.user, 'is_authenticated', False):
             try:
                 await self._auto_miss_on_disconnect()
             except Exception:
                 pass
-            # Drop the user's membership so the room doesn't linger in the
-            # lobby list as "1/6 players" forever after the tab closed. If
-            # the room ends up with zero members, delete it outright.
+
             try:
                 await database_sync_to_async(self._drop_membership_sync)()
             except Exception:
@@ -90,7 +84,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         if result[0] == 'end_round':
             room = await self._reload_room()
             rnd_obj = await database_sync_to_async(
-                lambda pk: Round.objects.get(pk=pk)
+                lambda pk: Round.objects.select_related('room', 'room__map').get(pk=pk)
             )(result[1])
             await self._end_round(room, rnd_obj)
 
@@ -135,8 +129,6 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                     'text': text,
                 })
 
-    # ---- handlers ------------------------------------------------------
-
     async def _handle_start(self):
         room = await self._reload_room()
         if room.host_id != self.user.id:
@@ -153,16 +145,15 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         rnd = await self._current_round(room)
         if rnd is None or rnd.ended_at is not None:
             return
-        # Cap retries per round so we don't loop forever on a broken pool.
+
         count = _PANO_RETRIES.get(rnd.pk, 0)
         if count >= MAX_PANO_RETRIES:
             return
         _PANO_RETRIES[rnd.pk] = count + 1
         used = await database_sync_to_async(self._collect_used_coords_sync)(room.pk)
-        lat, lng = room.map_def.random_point_excluding(used)
+        lat, lng = await database_sync_to_async(room.map_def.random_point_excluding)(used)
         await database_sync_to_async(self._update_round_coords_sync)(rnd.pk, lat, lng)
-        # Rebroadcast round_started with the same number — clients reinit the
-        # panorama and keep their existing timer.
+
         await self._broadcast({
             'type': 'round_started',
             'number': rnd.number,
@@ -195,12 +186,10 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         if await self._everyone_guessed(rnd):
             await self._end_round(room, rnd)
 
-    # ---- round lifecycle ----------------------------------------------
-
     async def _start_round(self, number: int):
         room = await self._reload_room()
         used = await database_sync_to_async(self._collect_used_coords_sync)(room.pk)
-        lat, lng = room.map_def.random_point_excluding(used)
+        lat, lng = await database_sync_to_async(room.map_def.random_point_excluding)(used)
         rnd = await database_sync_to_async(Round.objects.create)(
             room=room, number=number, lat=lat, lng=lng,
         )
@@ -222,7 +211,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
     async def _round_timer(self, round_id: int, seconds: int):
         await asyncio.sleep(seconds)
         rnd = await database_sync_to_async(
-            lambda: Round.objects.filter(pk=round_id).select_related('room').first()
+            lambda: Round.objects.filter(pk=round_id).select_related('room', 'room__map').first()
         )()
         if not rnd or rnd.ended_at is not None:
             return
@@ -241,15 +230,9 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             'guesses': results,
             'totals': totals,
         })
-        # Refresh sidebar scores for everyone in the room.
+
         await self._broadcast_state()
-        # CRITICAL: schedule the reveal sleep + next-round kick as a separate
-        # task. If we awaited the sleep inline, this consumer's dispatch loop
-        # would be parked for the full 6s, and the group_send'd round_result
-        # would sit in the channel layer queue until the loop wakes up.
-        # Client would then see round_result and round_started back-to-back
-        # (28ms apart) with no visible reveal window — exactly the bug the
-        # user reported as "result panel never shows".
+
         asyncio.create_task(self._proceed_after_reveal(rnd.number, rnd.pk))
 
     async def _proceed_after_reveal(self, round_number: int, round_pk: int):
@@ -269,15 +252,13 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         })
         await self._broadcast_state()
 
-    # ---- sync DB helpers ----------------------------------------------
-
     @database_sync_to_async
     def _get_room(self):
-        return Room.objects.filter(code=self.code).select_related('host').first()
+        return Room.objects.filter(code=self.code).select_related('host', 'map').first()
 
     @database_sync_to_async
     def _reload_room(self):
-        return Room.objects.select_related('host').get(code=self.code)
+        return Room.objects.select_related('host', 'map').get(code=self.code)
 
     @database_sync_to_async
     def _ensure_membership(self):
@@ -296,7 +277,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _create_guess(self, rnd, lat, lng, max_distance_m):
-        # Coords may have changed via pano_missing retry, refresh before scoring.
+
         rnd.refresh_from_db(fields=['lat', 'lng'])
         if Guess.objects.filter(round=rnd, user=self.user).exists():
             return False
@@ -325,7 +306,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 return False
             rnd.ended_at = timezone.now()
             rnd.save(update_fields=['ended_at'])
-            # zero-score missed guesses so totals are accurate
+
             members = Membership.objects.filter(room=rnd.room).values_list('user_id', flat=True)
             guessed = set(Guess.objects.filter(round=rnd).values_list('user_id', flat=True))
             for uid in members:
@@ -394,23 +375,17 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 xp_gains[m.user.username] = gain
         return leaderboard, xp_gains
 
-    # ---- broadcast helpers --------------------------------------------
-
     async def _broadcast_state(self):
         snapshot = await database_sync_to_async(self._snapshot_sync)()
         await self._broadcast({'type': 'state', **snapshot})
 
     def _snapshot_sync(self):
-        room = Room.objects.select_related('host').prefetch_related(
+        room = Room.objects.select_related('host', 'map').prefetch_related(
             'memberships__user__profile'
         ).get(code=self.code)
         players = []
         for m in room.memberships.all():
-            # User may have been created before the PlayerProfile signal was
-            # hooked up (legacy accounts) — accessing m.user.profile would
-            # raise RelatedObjectDoesNotExist, crash the consumer, and Channels
-            # would close the WS with code 1011. getattr with default catches
-            # that because RelatedObjectDoesNotExist subclasses AttributeError.
+
             profile = getattr(m.user, 'profile', None)
             players.append({
                 'username': m.user.username,
@@ -439,7 +414,6 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
 
     async def room_event(self, event):
         await self.send_json(event['payload'])
-
 
 def models_F_add(field, value):
     """Tiny helper so the F() expression is testable."""
