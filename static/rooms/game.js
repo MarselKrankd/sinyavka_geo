@@ -58,35 +58,49 @@
 
     // MutationObserver that nukes Yandex panorama overlay clutter (address
     // bubbles, transition badges, hint balloons, "Open in Maps" link) every
-    // time the panorama redraws. CSS handles the easy cases; this handles
+    // time the panorama redraws. CSS handles the easy cases; this catches
     // dynamic additions and classes that don't fit our selector patterns.
     //
-    // CRITICAL: do NOT walk up to ancestors — panorama Player wrappers also
-    // bubble street-name textContent and would get hidden, leaving the user
-    // staring at a black box. Only hide leaf-ish elements with their own text.
+    // CRITICAL: never walk up to ancestors — the panorama Player wrapper's
+    // textContent transitively contains every overlay's text, so a parent
+    // walk would hide the panorama itself and leave a black box. Skip any
+    // element that has a canvas/video descendant (that's the imagery).
+    const HIDE_STYLE = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
     function cleanPanoramaOverlays() {
         const pano = $('pano');
         if (!pano) return;
+        // Defer until the panorama imagery exists: if we run before the canvas
+        // is attached, the position-absolute fallback below would hide the
+        // wrappers that the canvas is ABOUT to be appended into, and the user
+        // would see a black box even though imagery loaded fine.
+        if (!pano.querySelector('canvas')) return;
         pano.querySelectorAll('*').forEach(el => {
             const tag = el.tagName;
             if (tag === 'CANVAS' || tag === 'VIDEO' || tag === 'IMG') return;
+            // Anything containing imagery — keep it, even if positioned absolute.
             if (el.querySelector('canvas, video')) return;
             // className may be SVGAnimatedString on SVG elements; getAttribute is safer.
             const cls = String(el.getAttribute && el.getAttribute('class') || el.className || '');
+            // Whitelist zoom controls (the only UI we want to keep).
             if (/zoom/i.test(cls)) return;
+            // 1) Class-based match — handles all the cases where Yandex puts
+            //    a recognisable keyword in the class.
             const overlayRe = /marker|hint|tooltip|popup|balloon|toponym|address|copyright|panel|link-control|open-link|go-to-map/i;
             if (overlayRe.test(cls)) {
-                el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
+                el.style.cssText = HIDE_STYLE;
                 return;
             }
-            // Only inspect text leaves (no element children) — never walk up.
-            if (el.children.length > 0) return;
-            const text = (el.textContent || '').trim();
-            if (text.length > 0 && text.length < 80) {
-                const computed = getComputedStyle(el);
-                if (computed.position === 'absolute' || computed.position === 'fixed') {
-                    el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;';
-                }
+            // 2) Position-based last-resort match — any absolutely-positioned
+            //    element with no canvas/video descendant is a UI overlay (house
+            //    number pill, transition pill, "open in maps" link, etc.).
+            //    Since the canvas-ancestor check above already let through any
+            //    structural wrapper that hosts the panorama image, the only
+            //    things landing here are decorative overlays.
+            const computed = getComputedStyle(el);
+            if (computed.position === 'absolute' || computed.position === 'fixed') {
+                // Skip elements that contain the zoom control as descendant.
+                if (el.querySelector('[class*="zoom"]')) return;
+                el.style.cssText = HIDE_STYLE;
             }
         });
     }

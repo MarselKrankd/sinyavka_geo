@@ -53,16 +53,22 @@
         ro.observe(wrapper);
     }
 
-    // Aggressive runtime cleaner for Yandex panorama overlays (address bubbles,
-    // transition badges, hint balloons, "Open in Maps" link). CSS handles the
-    // easy cases; this MutationObserver catches anything Yandex injects late.
+    // Aggressive runtime cleaner for Yandex panorama overlays (house number
+    // pills, transition arrows, hints, "Open in Maps" link). CSS handles the
+    // easy cases; this catches dynamic additions and class names we didn't
+    // anticipate.
     //
-    // CRITICAL: do NOT walk up to ancestors — panorama Player wrappers also
-    // bubble street-name textContent and would get hidden, leaving the user
-    // staring at a black box. Only hide leaf-ish elements with their own text.
+    // CRITICAL: never walk up to ancestors — the panorama Player wrapper's
+    // textContent transitively contains every overlay's text, so a parent
+    // walk would hide the panorama itself. Skip any element that has a
+    // canvas/video descendant (that's the imagery).
+    const HIDE_STYLE = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
     function cleanPanoramaOverlays() {
         const pano = $('pano');
         if (!pano) return;
+        // Defer until imagery exists, otherwise we hide the wrappers the
+        // canvas is about to land in (-> black box).
+        if (!pano.querySelector('canvas')) return;
         pano.querySelectorAll('*').forEach(el => {
             const tag = el.tagName;
             if (tag === 'CANVAS' || tag === 'VIDEO' || tag === 'IMG') return;
@@ -71,16 +77,15 @@
             if (/zoom/i.test(cls)) return;
             const overlayRe = /marker|hint|tooltip|popup|balloon|toponym|address|copyright|panel|link-control|open-link|go-to-map/i;
             if (overlayRe.test(cls)) {
-                el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
+                el.style.cssText = HIDE_STYLE;
                 return;
             }
-            if (el.children.length > 0) return;
-            const text = (el.textContent || '').trim();
-            if (text.length > 0 && text.length < 80) {
-                const computed = getComputedStyle(el);
-                if (computed.position === 'absolute' || computed.position === 'fixed') {
-                    el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;';
-                }
+            // Position-based fallback: any absolutely-positioned element with
+            // no canvas/video/zoom descendant is a decorative overlay.
+            const computed = getComputedStyle(el);
+            if (computed.position === 'absolute' || computed.position === 'fixed') {
+                if (el.querySelector('[class*="zoom"]')) return;
+                el.style.cssText = HIDE_STYLE;
             }
         });
     }

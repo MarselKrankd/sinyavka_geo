@@ -378,17 +378,22 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         room = Room.objects.select_related('host').prefetch_related(
             'memberships__user__profile'
         ).get(code=self.code)
-        players = [
-            {
+        players = []
+        for m in room.memberships.all():
+            # User may have been created before the PlayerProfile signal was
+            # hooked up (legacy accounts) — accessing m.user.profile would
+            # raise RelatedObjectDoesNotExist, crash the consumer, and Channels
+            # would close the WS with code 1011. getattr with default catches
+            # that because RelatedObjectDoesNotExist subclasses AttributeError.
+            profile = getattr(m.user, 'profile', None)
+            players.append({
                 'username': m.user.username,
-                'nickname': getattr(m.user.profile, 'nickname', m.user.username),
-                'level': getattr(m.user.profile, 'level', 1),
-                'avatar': getattr(m.user.profile, 'avatar_url', ''),
+                'nickname': getattr(profile, 'nickname', None) or m.user.username,
+                'level': getattr(profile, 'level', 1),
+                'avatar': getattr(profile, 'avatar_url', '') or '',
                 'score': m.score,
                 'is_host': m.user_id == room.host_id,
-            }
-            for m in room.memberships.all()
-        ]
+            })
         return {
             'room': {
                 'code': room.code,
