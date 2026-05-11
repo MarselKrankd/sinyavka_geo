@@ -56,7 +56,10 @@
     // Aggressive runtime cleaner for Yandex panorama overlays (address bubbles,
     // transition badges, hint balloons, "Open in Maps" link). CSS handles the
     // easy cases; this MutationObserver catches anything Yandex injects late.
-    const STREET_TEXT_RE = /(улиц|проспект|переул|шоссе|бульвар|площад|набереж|просп\.|ул\.|пер\.|пр-кт|пр\.|д\.\s*\d|\d+[-–]\d+)/i;
+    //
+    // CRITICAL: do NOT walk up to ancestors — panorama Player wrappers also
+    // bubble street-name textContent and would get hidden, leaving the user
+    // staring at a black box. Only hide leaf-ish elements with their own text.
     function cleanPanoramaOverlays() {
         const pano = $('pano');
         if (!pano) return;
@@ -71,20 +74,13 @@
                 el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
                 return;
             }
+            if (el.children.length > 0) return;
             const text = (el.textContent || '').trim();
-            if (text.length > 0 && text.length < 80 && el.children.length === 0) {
+            if (text.length > 0 && text.length < 80) {
                 const computed = getComputedStyle(el);
                 if (computed.position === 'absolute' || computed.position === 'fixed') {
                     el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;';
-                    return;
                 }
-            }
-            if (text.length > 0 && text.length < 80 && STREET_TEXT_RE.test(text)) {
-                let target = el;
-                for (let i = 0; i < 3 && target.parentElement && target.parentElement !== pano; i++) {
-                    target = target.parentElement;
-                }
-                target.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
             }
         });
     }

@@ -24,7 +24,16 @@ def _unique_nickname(base: str) -> str:
 def create_profile(sender, instance, created, **kwargs):
     if not created:
         return
-    base = instance.get_username() or instance.email.split('@')[0] if instance.email else 'player'
+    # Username first; fall back to email prefix; finally to 'player'.
+    # (The previous form had ambiguous precedence — `a or b if c else d` was
+    # parsed as `(a or b) if c else d`, so users without email got 'player'
+    # even when username was set.)
+    if instance.get_username():
+        base = instance.get_username()
+    elif instance.email:
+        base = instance.email.split('@')[0]
+    else:
+        base = 'player'
     try:
         PlayerProfile.objects.create(user=instance, nickname=_unique_nickname(base))
     except IntegrityError:
