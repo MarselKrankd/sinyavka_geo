@@ -26,6 +26,17 @@ class MapDef:
     def random_point(self) -> tuple[float, float]:
         return random.choice(self.points)
 
+    def random_point_excluding(
+        self, used: list[tuple[float, float]] | set[tuple[float, float]] | None = None
+    ) -> tuple[float, float]:
+        """Pick a fresh point, rounding to 4 decimals when comparing so float
+        round-tripping through the DB doesn't falsely keep used points alive."""
+        used_keys = {(round(u[0], 4), round(u[1], 4)) for u in (used or [])}
+        pool = [p for p in self.points if (round(p[0], 4), round(p[1], 4)) not in used_keys]
+        if not pool:
+            pool = list(self.points)
+        return random.choice(pool)
+
 
 ROSTOV = MapDef(
     key='rostov',

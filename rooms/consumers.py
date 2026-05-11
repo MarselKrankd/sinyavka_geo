@@ -55,6 +55,52 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, code):
         if hasattr(self, 'group_name'):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        # If the player vanished mid-round (closed tab, opened solo mode, etc.)
+        # lock them out with a 0-point miss so the round doesn't hang forever.
+        if hasattr(self, 'code') and hasattr(self, 'user') and getattr(self.user, 'is_authenticated', False):
+            try:
+                await self._auto_miss_on_disconnect()
+            except Exception:
+                pass
+
+    async def _auto_miss_on_disconnect(self):
+        result = await database_sync_to_async(self._auto_miss_sync)()
+        if not result:
+            return
+        await self._broadcast({
+            'type': 'guess_locked',
+            'user': self.user.username,
+        })
+        if result[0] == 'end_round':
+            room = await self._reload_room()
+            rnd_obj = await database_sync_to_async(
+                lambda pk: Round.objects.get(pk=pk)
+            )(result[1])
+            await self._end_round(room, rnd_obj)
+
+    def _auto_miss_sync(self):
+        try:
+            room = Room.objects.get(code=self.code)
+        except Room.DoesNotExist:
+            return None
+        if room.status != Room.Status.IN_GAME:
+            return None
+        rnd = room.rounds.order_by('-number').first()
+        if not rnd or rnd.ended_at is not None:
+            return None
+        if not Membership.objects.filter(room=room, user=self.user).exists():
+            return None
+        if Guess.objects.filter(round=rnd, user=self.user).exists():
+            return None
+        Guess.objects.create(
+            round=rnd, user=self.user, lat=0, lng=0,
+            distance_m=room.map_def.max_distance_m, points=0,
+        )
+        members = Membership.objects.filter(room=room).count()
+        guesses = Guess.objects.filter(round=rnd).count()
+        if guesses >= members:
+            return ('end_round', rnd.pk)
+        return ('locked', None)
 
     async def receive_json(self, content, **kwargs):
         action = content.get('action')
@@ -96,7 +142,8 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         if count >= MAX_PANO_RETRIES:
             return
         _PANO_RETRIES[rnd.pk] = count + 1
-        lat, lng = room.map_def.random_point()
+        used = await database_sync_to_async(self._collect_used_coords_sync)(room.pk)
+        lat, lng = room.map_def.random_point_excluding(used)
         await database_sync_to_async(self._update_round_coords_sync)(rnd.pk, lat, lng)
         # Rebroadcast round_started with the same number — clients reinit the
         # panorama and keep their existing timer.
@@ -136,7 +183,8 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
 
     async def _start_round(self, number: int):
         room = await self._reload_room()
-        lat, lng = room.map_def.random_point()
+        used = await database_sync_to_async(self._collect_used_coords_sync)(room.pk)
+        lat, lng = room.map_def.random_point_excluding(used)
         rnd = await database_sync_to_async(Round.objects.create)(
             room=room, number=number, lat=lat, lng=lng,
         )
@@ -216,6 +264,9 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
 
     def _update_round_coords_sync(self, round_id, lat, lng):
         Round.objects.filter(pk=round_id).update(lat=lat, lng=lng)
+
+    def _collect_used_coords_sync(self, room_pk):
+        return list(Round.objects.filter(room_id=room_pk).values_list('lat', 'lng'))
 
     @database_sync_to_async
     def _create_guess(self, rnd, lat, lng, max_distance_m):

@@ -185,17 +185,17 @@
 
     function drawBoundsOverlay(map) {
         if (boundsOverlay) map.geoObjects.remove(boundsOverlay);
-        boundsOverlay = new ymaps.Polygon(
-            [[
+        // Polyline, not Polygon — Polygon fill defaults to opaque and covers tiles.
+        boundsOverlay = new ymaps.Polyline(
+            [
                 [BOUNDS[0], BOUNDS[1]],
                 [BOUNDS[0], BOUNDS[3]],
                 [BOUNDS[2], BOUNDS[3]],
                 [BOUNDS[2], BOUNDS[1]],
                 [BOUNDS[0], BOUNDS[1]],
-            ]],
+            ],
             { hintContent: 'Зона панорам' },
             {
-                fillColor: 'rgba(34, 211, 238, 0.06)',
                 strokeColor: '#22d3ee',
                 strokeWidth: 2,
                 strokeStyle: 'dash',

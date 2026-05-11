@@ -222,17 +222,17 @@
 
     function drawBoundsOverlay(map, bounds) {
         if (boundsOverlay) { map.geoObjects.remove(boundsOverlay); }
-        boundsOverlay = new ymaps.Polygon(
-            [[
+        // Polyline, not Polygon — Polygon fill defaults to opaque and covers tiles.
+        boundsOverlay = new ymaps.Polyline(
+            [
                 [bounds[0], bounds[1]],
                 [bounds[0], bounds[3]],
                 [bounds[2], bounds[3]],
                 [bounds[2], bounds[1]],
                 [bounds[0], bounds[1]],
-            ]],
+            ],
             { hintContent: 'Зона панорам' },
             {
-                fillColor: 'rgba(34, 211, 238, 0.06)',
                 strokeColor: '#22d3ee',
                 strokeWidth: 2,
                 strokeStyle: 'dash',
