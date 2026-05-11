@@ -5,8 +5,13 @@ __pycache__/
 *$py.class
 
 .env
-.env.*
+.env.local
 *.sqlite3
 
 .vscode/
 *.log
+
+# build & user content
+staticfiles/
+media/
+!.env.example
