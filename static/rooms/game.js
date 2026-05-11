@@ -56,6 +56,41 @@
         ro.observe(wrapper);
     }
 
+    // MutationObserver that nukes Yandex panorama overlay clutter (address
+    // bubbles, transition badges, hint balloons, "Open in Maps" link) every
+    // time the panorama redraws. CSS handles the easy cases; this handles
+    // dynamic additions and classes that don't fit our selector patterns.
+    function cleanPanoramaOverlays() {
+        const pano = $('pano');
+        if (!pano) return;
+        pano.querySelectorAll('*').forEach(el => {
+            const tag = el.tagName;
+            if (tag === 'CANVAS' || tag === 'VIDEO' || tag === 'IMG') return;
+            if (el.querySelector('canvas, video')) return;
+            const cls = String(el.className || '');
+            if (typeof cls !== 'string') return;
+            if (/zoom/i.test(cls)) return;
+            const overlayRe = /marker|hint|tooltip|popup|balloon|toponym|address|copyright|panel|link-control|open-link|go-to-map/i;
+            if (overlayRe.test(cls)) {
+                el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
+                return;
+            }
+            const text = (el.textContent || '').trim();
+            if (text.length > 0 && text.length < 80 && el.children.length === 0) {
+                const computed = getComputedStyle(el);
+                if (computed.position === 'absolute' || computed.position === 'fixed') {
+                    el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;';
+                }
+            }
+        });
+    }
+    const panoEl = $('pano');
+    if (panoEl) {
+        const panoObserver = new MutationObserver(cleanPanoramaOverlays);
+        panoObserver.observe(panoEl, { childList: true, subtree: true });
+        setInterval(cleanPanoramaOverlays, 1000);
+    }
+
     $('copy-link')?.addEventListener('click', () => {
         navigator.clipboard.writeText(location.href).then(() => {
             const btn = $('copy-link');
@@ -248,13 +283,13 @@
             guessMap = new ymaps.Map('guess-map', {
                 center: data.map.center,
                 zoom: data.map.zoom,
+                type: 'yandex#map',
                 controls: ['zoomControl'],
             }, {
                 restrictMapArea: [[b[0], b[1]], [b[2], b[3]]],
                 suppressMapOpenBlock: true,
                 maxZoom: MAX_ZOOM,
                 minZoom: 9,
-                yandexMapDisablePoiInteractivity: true,
             });
             drawBoundsOverlay(guessMap, b);
             guessMap.events.add('click', (e) => {

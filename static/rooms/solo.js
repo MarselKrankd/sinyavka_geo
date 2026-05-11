@@ -53,6 +53,40 @@
         ro.observe(wrapper);
     }
 
+    // Aggressive runtime cleaner for Yandex panorama overlays (address bubbles,
+    // transition badges, hint balloons, "Open in Maps" link). CSS handles the
+    // easy cases; this MutationObserver catches anything Yandex injects late.
+    function cleanPanoramaOverlays() {
+        const pano = $('pano');
+        if (!pano) return;
+        pano.querySelectorAll('*').forEach(el => {
+            const tag = el.tagName;
+            if (tag === 'CANVAS' || tag === 'VIDEO' || tag === 'IMG') return;
+            if (el.querySelector('canvas, video')) return;
+            const cls = String(el.className || '');
+            if (typeof cls !== 'string') return;
+            if (/zoom/i.test(cls)) return;
+            const overlayRe = /marker|hint|tooltip|popup|balloon|toponym|address|copyright|panel|link-control|open-link|go-to-map/i;
+            if (overlayRe.test(cls)) {
+                el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;';
+                return;
+            }
+            const text = (el.textContent || '').trim();
+            if (text.length > 0 && text.length < 80 && el.children.length === 0) {
+                const computed = getComputedStyle(el);
+                if (computed.position === 'absolute' || computed.position === 'fixed') {
+                    el.style.cssText = 'display:none !important;visibility:hidden !important;opacity:0 !important;';
+                }
+            }
+        });
+    }
+    const panoEl = $('pano');
+    if (panoEl) {
+        const panoObserver = new MutationObserver(cleanPanoramaOverlays);
+        panoObserver.observe(panoEl, { childList: true, subtree: true });
+        setInterval(cleanPanoramaOverlays, 1000);
+    }
+
     startBtn.addEventListener('click', () => { hide(introPanel); startRound(); });
     nextBtn.addEventListener('click', () => { hide(resultPanel); startRound(); });
     replayBtn.addEventListener('click', () => { resetAll(); hide(overPanel); startRound(); });
@@ -210,13 +244,13 @@
             guessMap = new ymaps.Map('guess-map', {
                 center: MAP.center,
                 zoom: MAP.zoom,
+                type: 'yandex#map',
                 controls: ['zoomControl'],
             }, {
                 restrictMapArea: [[BOUNDS[0], BOUNDS[1]], [BOUNDS[2], BOUNDS[3]]],
                 suppressMapOpenBlock: true,
                 maxZoom: MAX_ZOOM,
                 minZoom: 9,
-                yandexMapDisablePoiInteractivity: true,
             });
             drawBoundsOverlay(guessMap);
             guessMap.events.add('click', (e) => {
