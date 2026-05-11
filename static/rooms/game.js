@@ -311,17 +311,31 @@
                 target.innerHTML = '';
                 // Authoritative way to suppress Yandex's address pills /
                 // "14А" house-number badges / transition arrows: blank out
-                // the panorama's own marker accessors BEFORE the Player is
-                // constructed. The Player calls getMarkers() and
-                // getConnectionMarkers() internally and renders whatever
-                // they return; empty arrays => nothing to render.
+                // the marker accessors on the panorama PROTOTYPE before the
+                // Player is constructed. Patching the prototype (not just
+                // the current instance) means every future panorama the
+                // user walks into — they're created via internal transitions
+                // and share the same prototype — also returns empty markers.
+                // Bonus: zeroing getConnections/getConnectionMarkers also
+                // disables in-panorama walking, so the user can rotate the
+                // camera but can't navigate to neighbours (and thus can't
+                // surface new markers anyway).
                 // Set HIDE_PANO_MARKERS = false at the top of this file to
                 // roll back if something looks wrong.
-                if (HIDE_PANO_MARKERS) {
-                    try { panoramas[0].getMarkers = () => []; } catch (e) {}
-                    try { panoramas[0].getConnectionMarkers = () => []; } catch (e) {}
-                    try { panoramas[0].getConnections = () => []; } catch (e) {}
-                    try { panoramas[0].getConnectionArrows = () => []; } catch (e) {}
+                if (HIDE_PANO_MARKERS && panoramas[0]) {
+                    try {
+                        const proto = Object.getPrototypeOf(panoramas[0]);
+                        proto.getMarkers = function() { return []; };
+                        proto.getConnectionMarkers = function() { return []; };
+                        proto.getConnections = function() { return []; };
+                        proto.getConnectionArrows = function() { return []; };
+                    } catch (e) {
+                        // Fallback: at least scrub this one instance.
+                        try { panoramas[0].getMarkers = () => []; } catch (e2) {}
+                        try { panoramas[0].getConnectionMarkers = () => []; } catch (e2) {}
+                        try { panoramas[0].getConnections = () => []; } catch (e2) {}
+                        try { panoramas[0].getConnectionArrows = () => []; } catch (e2) {}
+                    }
                 }
                 panoPlayer = new ymaps.panorama.Player('pano', panoramas[0], {
                     direction: [Math.random() * 360, 0],

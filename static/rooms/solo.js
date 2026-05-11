@@ -223,14 +223,24 @@
         const target = $('pano');
         target.innerHTML = '';
         if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
-        // Strip address pills + transition arrows by blanking the panorama's
-        // marker accessors before the Player calls them. See HIDE_PANO_MARKERS
-        // at the top of this file for the rollback switch.
-        if (HIDE_PANO_MARKERS) {
-            try { panorama.getMarkers = () => []; } catch (e) {}
-            try { panorama.getConnectionMarkers = () => []; } catch (e) {}
-            try { panorama.getConnections = () => []; } catch (e) {}
-            try { panorama.getConnectionArrows = () => []; } catch (e) {}
+        // Patch the panorama PROTOTYPE so every future panorama (created
+        // when the user walks via internal transitions) also returns
+        // empty markers. Patching just the instance only fixed the first
+        // panorama — the user would see pills as soon as they moved.
+        // See HIDE_PANO_MARKERS at the top of this file for rollback.
+        if (HIDE_PANO_MARKERS && panorama) {
+            try {
+                const proto = Object.getPrototypeOf(panorama);
+                proto.getMarkers = function() { return []; };
+                proto.getConnectionMarkers = function() { return []; };
+                proto.getConnections = function() { return []; };
+                proto.getConnectionArrows = function() { return []; };
+            } catch (e) {
+                try { panorama.getMarkers = () => []; } catch (e2) {}
+                try { panorama.getConnectionMarkers = () => []; } catch (e2) {}
+                try { panorama.getConnections = () => []; } catch (e2) {}
+                try { panorama.getConnectionArrows = () => []; } catch (e2) {}
+            }
         }
         panoPlayer = new ymaps.panorama.Player('pano', panorama, {
             direction: [Math.random() * 360, 0],
