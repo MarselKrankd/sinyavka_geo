@@ -1,5 +1,12 @@
 /* sinyavka_geo — multiplayer room client (Yandex Maps + Panoramas) */
 (() => {
+    // Rollback switch. Set to false (and hard-reload) if address pills /
+    // panorama markers stop being suppressed correctly or if blanking
+    // them breaks the panorama for some reason. true = strip markers
+    // before the panorama Player sees them; false = let Yandex render
+    // whatever it wants (rely only on the DOM-cleaner backstop).
+    const HIDE_PANO_MARKERS = true;
+
     const data = JSON.parse(document.getElementById('room-data').textContent);
     const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${wsProto}://${location.host}/ws/rooms/${data.code}/`);
@@ -302,15 +309,29 @@
                 }
                 if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
                 target.innerHTML = '';
+                // Authoritative way to suppress Yandex's address pills /
+                // "14А" house-number badges / transition arrows: blank out
+                // the panorama's own marker accessors BEFORE the Player is
+                // constructed. The Player calls getMarkers() and
+                // getConnectionMarkers() internally and renders whatever
+                // they return; empty arrays => nothing to render.
+                // Set HIDE_PANO_MARKERS = false at the top of this file to
+                // roll back if something looks wrong.
+                if (HIDE_PANO_MARKERS) {
+                    try { panoramas[0].getMarkers = () => []; } catch (e) {}
+                    try { panoramas[0].getConnectionMarkers = () => []; } catch (e) {}
+                    try { panoramas[0].getConnections = () => []; } catch (e) {}
+                    try { panoramas[0].getConnectionArrows = () => []; } catch (e) {}
+                }
                 panoPlayer = new ymaps.panorama.Player('pano', panoramas[0], {
                     direction: [Math.random() * 360, 0],
                     controls: ['zoomControl'],
                     hotkeysEnabled: true,
                     suppressMapOpenBlock: true,
                 });
-                // Yandex injects address markers and transition arrows into the
-                // panorama. Run the overlay cleaner now and again on a few
-                // delays to catch late insertions before the user sees them.
+                // Backstop: the CSS + DOM-walker cleaner catches anything
+                // Yandex still injects (e.g. canvas-rendered labels we can't
+                // intercept via API). Runs immediately + on a few delays.
                 cleanPanoramaOverlays();
                 setTimeout(cleanPanoramaOverlays, 100);
                 setTimeout(cleanPanoramaOverlays, 500);

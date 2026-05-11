@@ -1,5 +1,10 @@
 /* sinyavka_geo — solo speedrun mode (no backend, no XP) */
 (() => {
+    // Rollback switch. Set to false (and hard-reload) if address pills
+    // stop being suppressed or if blanking the markers breaks the
+    // panorama. Mirrors the same flag in game.js.
+    const HIDE_PANO_MARKERS = true;
+
     const MAP = JSON.parse(document.getElementById('solo-data').textContent);
     const TOTAL_ROUNDS = 5;
     const ROUND_SECONDS = 60;
@@ -218,6 +223,15 @@
         const target = $('pano');
         target.innerHTML = '';
         if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
+        // Strip address pills + transition arrows by blanking the panorama's
+        // marker accessors before the Player calls them. See HIDE_PANO_MARKERS
+        // at the top of this file for the rollback switch.
+        if (HIDE_PANO_MARKERS) {
+            try { panorama.getMarkers = () => []; } catch (e) {}
+            try { panorama.getConnectionMarkers = () => []; } catch (e) {}
+            try { panorama.getConnections = () => []; } catch (e) {}
+            try { panorama.getConnectionArrows = () => []; } catch (e) {}
+        }
         panoPlayer = new ymaps.panorama.Player('pano', panorama, {
             direction: [Math.random() * 360, 0],
             controls: ['zoomControl'],
