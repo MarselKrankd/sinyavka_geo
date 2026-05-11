@@ -206,20 +206,42 @@
         submitBtn.textContent = 'Поставь метку';
     }
 
+    let resultCountdownInterval = null;
     function onRoundResult(msg) {
         roundEnded = true;
         stopTimer();
         hide(gamePanel);  // <-- must hide, or the panorama covers the result map
         show(resultPanel);
+        const roundNumEl = $('result-round-num');
+        if (roundNumEl) roundNumEl.textContent = msg.number ? `#${msg.number}` : '';
         requestAnimationFrame(() => requestAnimationFrame(() => {
             whenYmapsReady(() => renderResultMap(msg));
         }));
-        $('result-list').innerHTML = msg.guesses.map((g, i) => `
-            <div class="flex items-center justify-between px-3 py-2 rounded-md ${i === 0 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-800/40'}">
-                <span class="font-semibold">${i+1}. ${escapeHtml(g.user)}</span>
-                <span class="text-slate-400">${(g.distance_m/1000).toFixed(2)} км · <b class="text-brand-400">+${g.points}</b></span>
-            </div>
-        `).join('');
+        $('result-list').innerHTML = msg.guesses.map((g, i) => {
+            const colorHex = MARKER_COLORS[i % MARKER_COLORS.length].dot;
+            return `
+                <div class="flex items-center justify-between px-3 py-2 rounded-md ${i === 0 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-800/40'}">
+                    <span class="flex items-center gap-2 font-semibold">
+                        <span class="inline-block w-3 h-3 rounded-full" style="background:${colorHex}"></span>
+                        ${i+1}. ${escapeHtml(g.user)}
+                    </span>
+                    <span class="text-slate-400">${(g.distance_m/1000).toFixed(2)} км · <b class="text-brand-400">+${g.points}</b></span>
+                </div>
+            `;
+        }).join('');
+        // Countdown until next round_started (or game_over) arrives. Server
+        // sleeps ROUND_REVEAL_SEC = 6 after broadcasting round_result.
+        if (resultCountdownInterval) { clearInterval(resultCountdownInterval); }
+        const cdEl = $('result-countdown');
+        if (cdEl) {
+            let left = 6;
+            cdEl.textContent = String(left);
+            resultCountdownInterval = setInterval(() => {
+                left -= 1;
+                cdEl.textContent = String(Math.max(0, left));
+                if (left <= 0) { clearInterval(resultCountdownInterval); resultCountdownInterval = null; }
+            }, 1000);
+        }
     }
 
     function onGameOver(msg) {
@@ -357,6 +379,18 @@
         }
     }
 
+    // Each player gets a different colour so guesses stay distinguishable
+    // even when they cluster. Pairs of (preset, dot-hex) — the hex matches
+    // the legend swatch we render next to each name in the result list.
+    const MARKER_COLORS = [
+        { preset: 'islands#blueCircleDotIconWithCaption',   dot: '#1e98ff' },
+        { preset: 'islands#greenCircleDotIconWithCaption',  dot: '#56db40' },
+        { preset: 'islands#violetCircleDotIconWithCaption', dot: '#b51eff' },
+        { preset: 'islands#orangeCircleDotIconWithCaption', dot: '#ff931e' },
+        { preset: 'islands#darkBlueCircleDotIconWithCaption', dot: '#177bc9' },
+        { preset: 'islands#yellowCircleDotIconWithCaption', dot: '#ffd21e' },
+    ];
+
     function renderResultMap(msg) {
         if (resultMap) {
             try { resultMap.destroy(); } catch (e) {}
@@ -365,13 +399,15 @@
         }
         resultMap = new ymaps.Map('result-map', {
             center: [msg.actual.lat, msg.actual.lng],
-            zoom: 10,
+            zoom: 11,
+            type: 'yandex#map',
             controls: ['zoomControl'],
         }, {
             suppressMapOpenBlock: true,
             maxZoom: 15,
         });
 
+        // Red star for the real point — same convention as solo.
         const actual = new ymaps.Placemark(
             [msg.actual.lat, msg.actual.lng],
             { hintContent: 'Настоящая локация', iconCaption: 'настоящая' },
@@ -381,32 +417,39 @@
         resultObjects.push(actual);
 
         const allCoords = [[msg.actual.lat, msg.actual.lng]];
-        msg.guesses.forEach(g => {
+        msg.guesses.forEach((g, i) => {
             if (!g.lat && !g.lng) return;
             const km = (g.distance_m / 1000).toFixed(2);
+            const colour = MARKER_COLORS[i % MARKER_COLORS.length];
             const guess = new ymaps.Placemark(
                 [g.lat, g.lng],
                 { hintContent: `${g.user}: ${km} км · ${g.points} очков`, iconCaption: `${g.user} · ${km} км` },
-                { preset: 'islands#blueCircleDotIconWithCaption' },
+                { preset: colour.preset },
             );
             const line = new ymaps.Polyline(
                 [[g.lat, g.lng], [msg.actual.lat, msg.actual.lng]],
                 { hintContent: `${km} км` },
-                { strokeColor: '#22d3ee', strokeWidth: 2, strokeStyle: 'shortdash' },
+                { strokeColor: colour.dot, strokeWidth: 2, strokeStyle: 'shortdash' },
             );
             resultMap.geoObjects.add(guess);
             resultMap.geoObjects.add(line);
             resultObjects.push(guess, line);
             allCoords.push([g.lat, g.lng]);
         });
-        if (allCoords.length > 1) {
-            const lats = allCoords.map(c => c[0]);
-            const lngs = allCoords.map(c => c[1]);
-            const bnds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
-            requestAnimationFrame(() => {
+
+        // Force a viewport fit so we don't render in a 0x0 container while
+        // result-panel transitions in, then frame all the markers.
+        requestAnimationFrame(() => {
+            resultMap.container.fitToViewport();
+            if (allCoords.length > 1) {
+                const lats = allCoords.map(c => c[0]);
+                const lngs = allCoords.map(c => c[1]);
+                const bnds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
                 resultMap.setBounds(bnds, { checkZoomRange: true, zoomMargin: 60 });
-            });
-        }
+            }
+            // One more refit after the result panel's layout settles.
+            setTimeout(() => resultMap && resultMap.container.fitToViewport(), 250);
+        });
     }
 
     submitBtn.addEventListener('click', () => {

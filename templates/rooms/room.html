@@ -66,9 +66,12 @@
             </div>
 
             <!-- Round result (hidden initially) -->
-            <div id="result-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-6">
-                <h3 class="text-lg font-semibold mb-3">Результат раунда</h3>
-                <div class="rounded-xl overflow-hidden border border-slate-800 mb-4" style="height: 320px;">
+            <div id="result-panel" class="hidden bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">Результат раунда <span id="result-round-num" class="text-brand-400"></span></h3>
+                    <div class="text-xs text-slate-400">Следующий раунд через <span id="result-countdown" class="text-brand-400 font-bold">—</span> с</div>
+                </div>
+                <div class="rounded-xl overflow-hidden border border-slate-800 mb-3" style="height: 560px;">
                     <div id="result-map" class="w-full h-full"></div>
                 </div>
                 <div id="result-list" class="space-y-1.5 text-sm"></div>
@@ -131,5 +134,5 @@
 </script>
 {% endlocalize %}
 
-<script src="{% load static %}{% static 'rooms/game.js' %}?v=12"></script>
+<script src="{% load static %}{% static 'rooms/game.js' %}?v=13"></script>
 {% endblock %}
