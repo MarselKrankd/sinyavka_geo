@@ -62,6 +62,22 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 await self._auto_miss_on_disconnect()
             except Exception:
                 pass
+            # Drop the user's membership so the room doesn't linger in the
+            # lobby list as "1/6 players" forever after the tab closed. If
+            # the room ends up with zero members, delete it outright.
+            try:
+                await database_sync_to_async(self._drop_membership_sync)()
+            except Exception:
+                pass
+
+    def _drop_membership_sync(self):
+        try:
+            room = Room.objects.get(code=self.code)
+        except Room.DoesNotExist:
+            return
+        Membership.objects.filter(room=room, user=self.user).delete()
+        if not Membership.objects.filter(room=room).exists():
+            room.delete()
 
     async def _auto_miss_on_disconnect(self):
         result = await database_sync_to_async(self._auto_miss_sync)()

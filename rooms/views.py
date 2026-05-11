@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import RoomCreateForm
@@ -14,12 +17,52 @@ from .models import Membership, Room
 from django.http import Http404
 
 
+# Rooms older than this with no memberships, or rooms in any non-finished
+# state that haven't seen activity for a long time, get cleaned up on the
+# next home page load. Avoids the home view drifting into a graveyard of
+# half-dead test rooms.
+EMPTY_ROOM_GRACE = timedelta(minutes=2)
+STALE_ROOM_CUTOFF = timedelta(hours=2)
+
+
+def _cleanup_stale_rooms():
+    """Drop rooms nobody can finish: empty rooms (no memberships) past the
+    short grace window, and any non-finished room older than the long
+    cutoff. Cheap enough to run on every home view hit."""
+    now = timezone.now()
+    empty_cutoff = now - EMPTY_ROOM_GRACE
+    stale_cutoff = now - STALE_ROOM_CUTOFF
+
+    empty_ids = list(
+        Room.objects
+        .exclude(status=Room.Status.FINISHED)
+        .annotate(member_count=Count('memberships'))
+        .filter(member_count=0, created_at__lt=empty_cutoff)
+        .values_list('pk', flat=True)
+    )
+    if empty_ids:
+        Room.objects.filter(pk__in=empty_ids).delete()
+
+    stale_ids = list(
+        Room.objects
+        .exclude(status=Room.Status.FINISHED)
+        .filter(created_at__lt=stale_cutoff)
+        .values_list('pk', flat=True)
+    )
+    if stale_ids:
+        Room.objects.filter(pk__in=stale_ids).delete()
+
+
 @login_required
 def home(request):
+    _cleanup_stale_rooms()
     rooms = (
         Room.objects.filter(is_private=False)
         .exclude(status=Room.Status.FINISHED)
         .annotate(player_count=Count('memberships'))
+        # Hide rooms with no real members — a final safety net in case
+        # cleanup didn't run yet (e.g., room just emptied this second).
+        .filter(player_count__gt=0)
         .select_related('host')
     )
     return render(request, 'rooms/home.html', {
@@ -87,7 +130,10 @@ def join_room(request, code):
 def leave_room(request, code):
     room = get_object_or_404(Room, code=code)
     Membership.objects.filter(room=room, user=request.user).delete()
-    if room.host_id == request.user.id and not room.memberships.exists():
+    # Delete the room when no one's left, regardless of who's leaving — the
+    # previous version only deleted on host exit, so a non-host being the
+    # last to leave would orphan the room.
+    if not room.memberships.exists():
         room.delete()
     return redirect('rooms:home')
 
