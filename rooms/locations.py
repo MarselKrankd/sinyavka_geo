@@ -29,13 +29,21 @@ class MapDef:
     def random_point_excluding(
         self, used: list[tuple[float, float]] | set[tuple[float, float]] | None = None
     ) -> tuple[float, float]:
-        """Pick a fresh point, rounding to 4 decimals when comparing so float
-        round-tripping through the DB doesn't falsely keep used points alive."""
+        """Pick a fresh point. Rounding to 4 decimals when comparing so float
+        round-tripping through the DB doesn't falsely keep used points alive.
+
+        After the hand-picked pool is exhausted, fall back to a uniformly
+        random point within the playable bounds — mirrors the solo mode's
+        ``tryRandom`` fallback so multiplayer rounds don't get stuck when
+        the curated points have no Yandex panorama coverage left."""
         used_keys = {(round(u[0], 4), round(u[1], 4)) for u in (used or [])}
         pool = [p for p in self.points if (round(p[0], 4), round(p[1], 4)) not in used_keys]
-        if not pool:
-            pool = list(self.points)
-        return random.choice(pool)
+        if pool:
+            return random.choice(pool)
+        south, west, north, east = self.bounds
+        lat = south + random.random() * (north - south)
+        lng = west + random.random() * (east - west)
+        return (lat, lng)
 
 
 ROSTOV = MapDef(

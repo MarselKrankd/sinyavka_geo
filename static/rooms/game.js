@@ -264,18 +264,40 @@
         }).join('');
     }
 
+    // Tracks the round whose panorama we're currently loading so a late-arriving
+    // locate() callback for round N can't paint into round N+1's container.
+    let activePanoRound = 0;
+
+    function reportPanoMissing(label) {
+        if (panoMissingReported) return;
+        panoMissingReported = true;
+        const target = $('pano');
+        if (target) target.innerHTML = `<div class="absolute inset-0 grid place-items-center text-slate-500 text-sm">${label}</div>`;
+        try { ws.send(JSON.stringify({ action: 'pano_missing' })); } catch (e) {}
+    }
+
     function initPanorama(lat, lng) {
         const target = $('pano');
         target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-slate-500 text-sm">Загружаю панораму…</div>';
+        const round = currentRoundNumber;
+        activePanoRound = round;
+
+        // Hard timeout: if Yandex doesn't answer in 7s, treat as missing and
+        // bounce to the next point. Without this the user gets stuck on
+        // "Загружаю панораму" forever when the API is slow or the point has
+        // no panorama and Yandex never resolves.
+        const timeout = setTimeout(() => {
+            if (activePanoRound !== round) return;
+            console.warn('panorama locate timeout, asking server for another point');
+            reportPanoMissing('Беру другую локацию…');
+        }, 7000);
+
         ymaps.panorama.locate([lat, lng], { layer: 'yandex#panorama' }).then(
             (panoramas) => {
+                clearTimeout(timeout);
+                if (activePanoRound !== round) return;  // stale callback
                 if (!panoramas.length) {
-                    // Tell the server: bad spot, ship us another point.
-                    if (!panoMissingReported) {
-                        panoMissingReported = true;
-                        ws.send(JSON.stringify({ action: 'pano_missing' }));
-                        target.innerHTML = '<div class="absolute inset-0 grid place-items-center text-slate-500 text-sm">Беру другую локацию…</div>';
-                    }
+                    reportPanoMissing('Беру другую локацию…');
                     return;
                 }
                 if (panoPlayer) { try { panoPlayer.destroy(); } catch (e) {} panoPlayer = null; }
@@ -287,19 +309,18 @@
                     suppressMapOpenBlock: true,
                 });
                 // Yandex injects address markers and transition arrows into the
-                // panorama. Run the overlay cleaner immediately and again after
-                // a short delay to catch late insertions before the user sees them.
+                // panorama. Run the overlay cleaner now and again on a few
+                // delays to catch late insertions before the user sees them.
                 cleanPanoramaOverlays();
                 setTimeout(cleanPanoramaOverlays, 100);
                 setTimeout(cleanPanoramaOverlays, 500);
                 setTimeout(cleanPanoramaOverlays, 1500);
             },
             (err) => {
+                clearTimeout(timeout);
+                if (activePanoRound !== round) return;
                 console.error('panorama locate failed', err);
-                if (!panoMissingReported) {
-                    panoMissingReported = true;
-                    ws.send(JSON.stringify({ action: 'pano_missing' }));
-                }
+                reportPanoMissing('Беру другую локацию…');
             }
         );
     }

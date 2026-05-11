@@ -29,7 +29,7 @@ from .scoring import haversine_m, points_from_distance
 
 
 ROUND_REVEAL_SEC = 6
-MAX_PANO_RETRIES = 6
+MAX_PANO_RETRIES = 20
 # per-round retry counters (cleared when a new round starts)
 _PANO_RETRIES: dict[int, int] = {}
 
