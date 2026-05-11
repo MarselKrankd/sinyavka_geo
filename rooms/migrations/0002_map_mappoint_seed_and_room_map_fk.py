@@ -2,8 +2,8 @@ import django.db.models.deletion
 from django.db import migrations, models
 
 ROSTOV = {
-    'key':         ,
-    'label':                 ,
+    'key': 'rostov',
+    'label': 'Ростов-на-Дону',
     'center_lat': 47.2357, 'center_lng': 39.7180,
     'zoom': 11, 'max_zoom': 15,
     'south': 47.165, 'west': 39.595, 'north': 47.310, 'east': 39.840,
@@ -35,8 +35,8 @@ ROSTOV = {
 }
 
 MOSCOW = {
-    'key':         ,
-    'label':         ,
+    'key': 'moscow',
+    'label': 'Москва',
     'center_lat': 55.7558, 'center_lng': 37.6173,
     'zoom': 9, 'max_zoom': 14,
     'south': 55.560, 'west': 37.380, 'north': 55.920, 'east': 37.870,
